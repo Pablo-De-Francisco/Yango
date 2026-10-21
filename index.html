@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Copiloto de Marketing IA · Yango (borrador)</title>
+  <meta name="description" content="Prototipo borrador del MVP: hoja de KPIs, briefing semanal IA y asistente de preguntas, alimentado por un Excel editable.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23ff0000'/><text x='16' y='23' font-size='18' font-family='Arial' font-weight='900' font-style='italic' fill='white' text-anchor='middle'>Y</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">YANGO</span>
+      <div>
+        <h1>Copiloto de Marketing IA</h1>
+        <p class="sub">Briefing · Asistente · Diccionario <span class="badge">Borrador · datos ilustrativos</span></p>
+      </div>
+    </div>
+    <div class="source">
+      <div class="source-info">
+        <span class="dot" id="srcDot"></span>
+        <span id="srcLabel">Cargando Excel…</span>
+      </div>
+      <div class="source-actions">
+        <label class="field">Semana
+          <select id="weekSel" aria-label="Semana"></select>
+        </label>
+        <label class="btn primary" for="fileInput">Cargar mi Excel</label>
+        <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
+        <a class="btn" href="data/kpis_marketing.xlsx" download>Descargar Excel base</a>
+        <button class="btn ghost" id="reloadBtn" title="Volver al Excel publicado">Restablecer</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="alerts" class="alerts" aria-live="polite"></div>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-tab="kpis" class="active"><b>1</b> Hoja de KPIs</button>
+    <button role="tab" data-tab="briefing"><b>2</b> Briefing semanal IA</button>
+    <button role="tab" data-tab="chat"><b>3</b> Asistente de preguntas</button>
+    <button role="tab" data-tab="log"><b>4</b> Registro (log_ia)</button>
+  </nav>
+
+  <main>
+    <!-- 1. KPIs -->
+    <section id="tab-kpis" class="tab active">
+      <div class="cards" id="cards"></div>
+      <div class="grid2">
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>Hoja de cálculo · pestaña «kpis»</span></div>
+          <div class="win-body">
+            <h3 id="kpiTitle">Semana</h3>
+            <div class="table-wrap"><table id="kpiTable" class="t"></table></div>
+            <p class="note">ROAS en rojo = por debajo de la meta del diccionario.</p>
+          </div>
+        </div>
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>ROAS por canal y tendencia</span></div>
+          <div class="win-body">
+            <div id="roasBars" class="bars"></div>
+            <h4>ROAS por semana</h4>
+            <div class="table-wrap"><table id="trendTable" class="t small"></table></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>Plan vs. real · pestaña «presupuesto»</span></div>
+          <div class="win-body"><div id="budget"></div></div>
+        </div>
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>Pestaña «diccionario»</span></div>
+          <div class="win-body"><div class="table-wrap"><table id="dictTable" class="t small"></table></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Briefing -->
+    <section id="tab-briefing" class="tab">
+      <div class="win mail">
+        <div class="win-bar"><i></i><i></i><i></i><span>Correo · Briefing IA</span></div>
+        <div class="win-body">
+          <div class="mail-head">
+            <div><b>Para:</b> Dirección de Marketing</div>
+            <div><b>Asunto:</b> <span id="mailSubject"></span></div>
+          </div>
+          <article id="briefing" class="briefing" contenteditable="true" spellcheck="false"></article>
+          <div class="ai-foot" id="briefFoot"></div>
+          <div class="row-actions">
+            <input id="reviewer" type="text" placeholder="Revisado por (nombre del analista)" aria-label="Revisado por">
+            <button class="btn" id="regenBtn">Regenerar</button>
+            <button class="btn" id="copyBtn">Copiar texto</button>
+            <button class="btn primary" id="approveBtn">Aprobar y registrar</button>
+          </div>
+          <p class="note">El texto es editable: el analista revisa y corrige antes de enviar (humano en el circuito). Generado solo con cifras del Excel.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Chat -->
+    <section id="tab-chat" class="tab">
+      <div class="win chat">
+        <div class="win-bar"><i></i><i></i><i></i><span>Asistente de Marketing</span></div>
+        <div class="win-body chat-body" id="chatLog"></div>
+        <div class="chips" id="chips"></div>
+        <form class="chat-input" id="chatForm" autocomplete="off">
+          <input id="chatInput" type="text" placeholder="Escribe tu pregunta…" aria-label="Pregunta">
+          <button type="submit" aria-label="Enviar">➤</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 4. Log -->
+    <section id="tab-log" class="tab">
+      <div class="win">
+        <div class="win-bar"><i></i><i></i><i></i><span>Pestaña «log_ia»</span></div>
+        <div class="win-body">
+          <div class="row-actions">
+            <button class="btn primary" id="exportBtn">Descargar Excel con log_ia</button>
+            <button class="btn ghost" id="clearLogBtn">Vaciar registro</button>
+          </div>
+          <div class="table-wrap"><table id="logTable" class="t small"></table></div>
+          <p class="note">El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    Prototipo académico · Innovación Tech III – Desarrollo de modelos de negocio con IA · Pablo Esteban de Francisco · 2026.
+    Motor de borrador basado en reglas sobre el Excel (sin enviar datos a terceros).
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
