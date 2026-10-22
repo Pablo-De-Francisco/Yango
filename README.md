@@ -9,7 +9,9 @@ El prototipo tiene tres piezas, alimentadas por una **base de datos Supabase** (
 2. **Briefing semanal IA**: borrador de correo para la Dirección de Marketing (resumen, qué explica el cambio, qué decidir), editable y con aprobación humana.
 3. **Asistente de preguntas**: responde solo con cifras de los datos y cita la fuente; si el dato no está, lo dice.
 
-Además, un **registro (log_ia)** de briefings aprobados y preguntas. Con Supabase el registro es **central**: se ven las consultas de todos los usuarios.
+Además, un **registro (log_ia)** de briefings aprobados y preguntas. Con Supabase el registro es **central** y cada consulta queda asociada a la **cuenta** que la hizo.
+
+Con Supabase configurado, **para entrar hace falta una cuenta** (correo y contraseña). Cada usuario ve solo sus consultas; las cuentas con rol **admin** ven las de todos, con filtro por usuario.
 
 Un selector de **escenario** permite comparar cuatro conjuntos de datos simulados: *Base*, *Muy favorable*, *Neutro* y *Desfavorable* (no son resultados reales).
 
@@ -18,14 +20,27 @@ Un selector de **escenario** permite comparar cuatro conjuntos de datos simulado
 ## Conectar Supabase (plan gratuito)
 
 1. Crea una cuenta y un proyecto en [supabase.com](https://supabase.com).
-2. En el proyecto: **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run** (crea las tablas y la seguridad).
+2. En el proyecto: **SQL Editor → New query**, pega el contenido de `supabase/schema.sql` y pulsa **Run** (crea las tablas, las cuentas y la seguridad; se puede volver a ejecutar sin perder datos).
 3. Repite con `supabase/seed.sql` (carga los cuatro escenarios, el diccionario y el presupuesto).
 4. En **Project Settings → API** copia **Project URL** y la clave **anon public**, y pégalas en `config.js` (`supabaseUrl` y `supabaseAnonKey`).
 5. Sube el cambio a GitHub: Vercel vuelve a publicar el sitio solo.
 
-La clave *anon* es pública por diseño: las políticas de `schema.sql` solo permiten **leer** los datos y **agregar** filas al registro; no se puede modificar ni borrar nada desde la app. **Nunca** pongas la clave `service_role` en `config.js`.
+La clave *publishable / anon* es pública por diseño: sin sesión no da acceso a nada. Con sesión, las políticas de `schema.sql` solo permiten **leer** los datos y **agregar** consultas propias; no se puede modificar ni borrar nada desde la app. **Nunca** pongas la clave `secret` / `service_role` en `config.js`.
 
-Si Supabase no responde, la app muestra un aviso y usa el Excel del escenario.
+Si Supabase no responde después de iniciar sesión, la app muestra un aviso y usa el Excel del escenario.
+
+## Cuentas y administrador
+
+1. **Correo de confirmación.** Por defecto Supabase pide confirmar el correo al crear una cuenta, y en el plan gratuito solo envía unos pocos correos por hora. Para una demo: **Authentication → Sign In / Providers → Email → desactivar "Confirm email"**. Si lo dejas activo, en **Authentication → URL Configuration** pon **Site URL** = `https://yango-seven.vercel.app` (para que el enlace del correo vuelva a la app).
+2. **Crea tu cuenta** en la app con el botón **Crear cuenta** (o en **Authentication → Users → Add user**).
+3. **Hazte administrador** ejecutando en el SQL Editor (con tu correo):
+   ```sql
+   update public.perfiles set rol = 'admin' where email = 'tu-correo@ejemplo.com';
+   ```
+   Cierra sesión y vuelve a entrar: verás la etiqueta **Administrador** y, en la pestaña **Registro**, todas las consultas con su usuario.
+4. **Opcional, acceso solo por invitación:** desactiva **Authentication → Sign In / Providers → "Allow new users to sign up"** y crea las cuentas tú mismo en **Authentication → Users → Add user** (marca *Auto Confirm User*).
+
+El rol solo se puede cambiar desde el SQL Editor; ningún usuario puede hacerse administrador desde la app.
 
 > En el plan gratuito, Supabase pausa los proyectos tras ~1 semana sin actividad; se reactivan desde el panel.
 
@@ -37,9 +52,11 @@ Si Supabase no responde, la app muestra un aviso y usa el Excel del escenario.
 | `datos_crudos` | una fila por escenario, semana y canal (inversión, impresiones, clics, conversiones, ingresos) |
 | `diccionario` | definición única, fórmula, dueño y meta de cada KPI |
 | `presupuesto` | presupuesto por mes (AAAA-MM) y canal |
-| `log_ia` | preguntas y briefings: fecha, tipo, escenario, semana, respuesta, fuente, revisor y un id anónimo de sesión |
+| `log_ia` | preguntas y briefings: fecha, cuenta (`user_id`), tipo, escenario, semana, respuesta, fuente, revisor |
+| `perfiles` | una fila por cuenta: correo y rol (`usuario` o `admin`); se crea sola al registrarse |
+| `log_ia_detalle` | vista de `log_ia` con el correo de quien consultó |
 
-Para ver las consultas de los usuarios: en Supabase, **Table Editor → log_ia** (se puede exportar a CSV), o la pestaña **Registro** del prototipo.
+Para ver qué consultó cada usuario: entra a la app con una cuenta **admin** → pestaña **Registro** (filtro por usuario y descarga a Excel), o en Supabase **Table Editor → log_ia_detalle** (exportable a CSV).
 
 ## Cómo modificar los datos
 

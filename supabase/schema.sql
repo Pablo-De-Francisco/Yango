@@ -1,8 +1,9 @@
 -- Copiloto de Marketing IA · Yango — esquema de Supabase.
--- Ejecutar una vez en Supabase: SQL Editor → New query → pegar → Run.
+-- Ejecutar en Supabase: SQL Editor → New query → pegar → Run.
+-- Se puede volver a ejecutar sobre una base existente: no borra datos.
 -- Las tablas replican las pestañas del Excel (datos_crudos, diccionario, presupuesto, log_ia),
 -- con una columna «escenario» en datos_crudos para comparar escenarios simulados.
--- Regla del MVP: cero datos personales.
+-- Para usar la app hace falta una cuenta (Supabase Auth). Regla del MVP: cero datos personales en los datos.
 
 -- Escenarios simulados (base, muy favorable, neutro, desfavorable). La app muestra un selector.
 create table if not exists public.escenarios (
@@ -42,7 +43,33 @@ create table if not exists public.presupuesto (
   primary key (mes, canal)
 );
 
--- Registro central de preguntas al asistente y briefings aprobados.
+-- ---------- cuentas ----------
+-- Un perfil por cuenta de Supabase Auth: correo y rol ('usuario' o 'admin').
+-- El rol solo se cambia desde el SQL Editor (ver README); la app no puede modificarlo.
+create table if not exists public.perfiles (
+  id         uuid primary key references auth.users (id) on delete cascade,
+  email      text,
+  rol        text not null default 'usuario' check (rol in ('usuario', 'admin')),
+  created_at timestamptz not null default now()
+);
+
+create or replace function public.crear_perfil() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.perfiles (id, email) values (new.id, new.email) on conflict (id) do nothing;
+  return new;
+end $$;
+drop trigger if exists al_crear_usuario on auth.users;
+create trigger al_crear_usuario after insert on auth.users for each row execute function public.crear_perfil();
+-- perfiles de las cuentas que ya existían antes de este script
+insert into public.perfiles (id, email) select id, email from auth.users on conflict (id) do nothing;
+
+create or replace function public.es_admin() returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.perfiles where id = auth.uid() and rol = 'admin');
+$$;
+
+-- Registro central de preguntas al asistente y briefings aprobados, con la cuenta que los hizo.
 create table if not exists public.log_ia (
   id           bigint generated always as identity primary key,
   created_at   timestamptz not null default now(),
@@ -54,19 +81,29 @@ create table if not exists public.log_ia (
   fuente       text check (char_length(fuente) <= 300),
   revisado_por text check (char_length(revisado_por) <= 120),
   decision     text check (char_length(decision) <= 1000),
-  sesion       text check (char_length(sesion) <= 64)  -- id anónimo del navegador, para medir adopción
+  sesion       text check (char_length(sesion) <= 64)  -- id anónimo del navegador
 );
+alter table public.log_ia add column if not exists user_id uuid default auth.uid() references auth.users (id) on delete set null;
 create index if not exists log_ia_created_at_idx on public.log_ia (created_at desc);
+create index if not exists log_ia_user_idx on public.log_ia (user_id);
 
--- Seguridad a nivel de fila: la app usa la clave pública "anon".
--- Puede LEER los datos y el registro, y AGREGAR filas al registro; nada más.
--- Los datos se editan solo desde el panel de Supabase (Table Editor) o con seed.sql.
+-- Registro con el correo de quien consultó. security_invoker: respeta las reglas de log_ia y perfiles.
+create or replace view public.log_ia_detalle with (security_invoker = true) as
+  select l.id, l.created_at, l.tipo, l.escenario, l.semana, l.pregunta, l.respuesta, l.fuente,
+         l.revisado_por, l.decision, l.sesion, l.user_id, p.email
+  from public.log_ia l left join public.perfiles p on p.id = l.user_id;
+
+-- ---------- seguridad (RLS) ----------
+-- Sin sesión (anon) no se puede leer ni escribir nada.
+-- Con sesión: leer los datos, registrar consultas propias y ver solo las propias; el admin ve todas.
 alter table public.escenarios   enable row level security;
 alter table public.datos_crudos enable row level security;
 alter table public.diccionario  enable row level security;
 alter table public.presupuesto  enable row level security;
 alter table public.log_ia       enable row level security;
+alter table public.perfiles     enable row level security;
 
+-- políticas de la versión sin cuentas
 drop policy if exists "lectura publica" on public.escenarios;
 drop policy if exists "lectura publica" on public.datos_crudos;
 drop policy if exists "lectura publica" on public.diccionario;
@@ -74,9 +111,21 @@ drop policy if exists "lectura publica" on public.presupuesto;
 drop policy if exists "lectura publica" on public.log_ia;
 drop policy if exists "registrar uso"   on public.log_ia;
 
-create policy "lectura publica" on public.escenarios   for select to anon, authenticated using (true);
-create policy "lectura publica" on public.datos_crudos for select to anon, authenticated using (true);
-create policy "lectura publica" on public.diccionario  for select to anon, authenticated using (true);
-create policy "lectura publica" on public.presupuesto  for select to anon, authenticated using (true);
-create policy "lectura publica" on public.log_ia       for select to anon, authenticated using (true);
-create policy "registrar uso"   on public.log_ia       for insert to anon, authenticated with check (true);
+drop policy if exists "lectura con cuenta"      on public.escenarios;
+drop policy if exists "lectura con cuenta"      on public.datos_crudos;
+drop policy if exists "lectura con cuenta"      on public.diccionario;
+drop policy if exists "lectura con cuenta"      on public.presupuesto;
+drop policy if exists "ver propias o admin"     on public.log_ia;
+drop policy if exists "registrar propias"       on public.log_ia;
+drop policy if exists "ver perfil propio o admin" on public.perfiles;
+
+create policy "lectura con cuenta" on public.escenarios   for select to authenticated using (true);
+create policy "lectura con cuenta" on public.datos_crudos for select to authenticated using (true);
+create policy "lectura con cuenta" on public.diccionario  for select to authenticated using (true);
+create policy "lectura con cuenta" on public.presupuesto  for select to authenticated using (true);
+create policy "ver propias o admin" on public.log_ia for select to authenticated
+  using (user_id = (select auth.uid()) or (select public.es_admin()));
+create policy "registrar propias" on public.log_ia for insert to authenticated
+  with check (user_id = (select auth.uid()));
+create policy "ver perfil propio o admin" on public.perfiles for select to authenticated
+  using (id = (select auth.uid()) or (select public.es_admin()));

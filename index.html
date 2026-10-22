@@ -20,6 +20,10 @@
       </div>
     </div>
     <div class="source">
+      <div class="user-box" id="userBox" hidden>
+        <span id="userEmail"></span><span class="role" id="userRole"></span>
+        <button class="btn ghost" id="logoutBtn" type="button">Cerrar sesión</button>
+      </div>
       <div class="source-info">
         <span class="dot" id="srcDot"></span>
         <span id="srcLabel">Cargando Excel…</span>
@@ -38,6 +42,27 @@
       </div>
     </div>
   </header>
+
+  <section class="gate" id="authGate" hidden>
+    <form class="win gate-card" id="authForm">
+      <div class="win-bar"><i></i><i></i><i></i><span>Acceso al Copiloto</span></div>
+      <div class="win-body">
+        <h3>Ingresa con tu cuenta</h3>
+        <p class="note">Cada consulta queda registrada con tu usuario.</p>
+        <label class="gate-field">Correo
+          <input id="authEmail" type="email" autocomplete="username" required>
+        </label>
+        <label class="gate-field">Contraseña
+          <input id="authPass" type="password" autocomplete="current-password" minlength="6" required>
+        </label>
+        <div class="row-actions">
+          <button class="btn primary" type="submit" value="login">Entrar</button>
+          <button class="btn" type="submit" value="signup">Crear cuenta</button>
+        </div>
+        <p class="gate-msg" id="authMsg" aria-live="polite"></p>
+      </div>
+    </form>
+  </section>
 
   <div id="alerts" class="alerts" aria-live="polite"></div>
 
@@ -123,6 +148,9 @@
         <div class="win-bar"><i></i><i></i><i></i><span>Pestaña «log_ia»</span></div>
         <div class="win-body">
           <div class="row-actions">
+            <label class="field" id="logUserField" hidden>Usuario
+              <select id="logUserSel" aria-label="Filtrar por usuario"></select>
+            </label>
             <button class="btn primary" id="exportBtn">Descargar Excel con log_ia</button>
             <button class="btn ghost" id="clearLogBtn">Vaciar registro</button>
           </div>
@@ -139,6 +167,7 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

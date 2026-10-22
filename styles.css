@@ -142,6 +142,20 @@ main { padding: 16px clamp(16px, 4vw, 40px) 32px; max-width: 1280px; }
 
 .foot { color: var(--muted); font-size: 12px; padding: 0 clamp(16px, 4vw, 40px) 24px; }
 
+/* cuentas */
+.user-box { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.user-box #userEmail { color: var(--ink); font-weight: 600; }
+.role { padding: 1px 8px; border-radius: 99px; background: #f1f1f2; font-size: 12px; font-weight: 600; }
+.role.admin { background: var(--pink); color: var(--red-dark); }
+.gate { padding: 48px 16px; display: grid; place-items: start center; }
+.gate-card { width: min(100%, 420px); }
+.gate-field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.gate-field input { border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; font-weight: 400; color: var(--ink); }
+.gate-msg { min-height: 20px; margin: 12px 0 0; font-size: 13px; }
+.gate-msg.err { color: #9b1111; } .gate-msg.ok { color: var(--green); }
+body.locked .source-info, body.locked .source-actions, body.locked .tabs, body.locked main { display: none; }
+[hidden] { display: none !important; }
+
 body.dragging::after {
   content: "Suelta tu Excel para cargarlo"; position: fixed; inset: 0; display: grid; place-items: center;
   background: rgba(255,0,0,.08); border: 3px dashed var(--red); color: var(--red); font-weight: 700; font-size: 22px; z-index: 10;

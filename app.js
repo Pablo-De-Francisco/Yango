@@ -7,6 +7,8 @@ const DEFAULT_URL = 'data/kpis_marketing.xlsx';
 const LOG_KEY = 'copiloto_yango_log';
 const CFG = window.COPILOTO_CONFIG || {};
 const DB = CFG.supabaseUrl && CFG.supabaseAnonKey ? { url: CFG.supabaseUrl.replace(/\/+$/, ''), key: CFG.supabaseAnonKey } : null;
+// cliente oficial de Supabase: solo para las cuentas (inicio de sesión y token); los datos van por la API REST
+const SB = DB && window.supabase ? window.supabase.createClient(DB.url, DB.key) : null;
 const FILE_SCENARIOS = CFG.escenarios && CFG.escenarios.length ? CFG.escenarios : [{ id: 'base', nombre: 'Base', archivo: DEFAULT_URL }];
 // id anónimo por navegador para medir adopción en log_ia (sin datos personales)
 const SESSION = (() => {
@@ -19,6 +21,7 @@ const SESSION = (() => {
 
 const state = {
   scenarios: FILE_SCENARIOS, scenario: FILE_SCENARIOS[0].id, logRemote: false,
+  user: null, isAdmin: false, logUser: '',
   wb: null, source: '', isUser: false,
   data: new Map(),   // semana -> Map(canal -> {inv, imp, clics, conv, ing})
   weeks: [], channels: [], starts: new Map(), // semana -> Date
@@ -360,9 +363,11 @@ function answer(q) {
 
 // ---------- Supabase (API REST) ----------
 async function sb(path, opts = {}) {
+  // con sesión iniciada se envía el token del usuario: las reglas RLS dependen de quién consulta
+  const session = SB ? (await SB.auth.getSession()).data.session : null;
   const r = await fetch(`${DB.url}/rest/v1/${path}`, {
     ...opts,
-    headers: { apikey: DB.key, Authorization: `Bearer ${DB.key}`, 'Content-Type': 'application/json', ...opts.headers },
+    headers: { apikey: DB.key, Authorization: `Bearer ${session ? session.access_token : DB.key}`, 'Content-Type': 'application/json', ...opts.headers },
   });
   if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return r.status === 201 || r.status === 204 ? null : r.json();
@@ -402,9 +407,10 @@ async function loadScenarios() {
 async function loadLog() {
   if (DB) {
     try {
-      const rows = await sb('log_ia?select=*&order=created_at.desc&limit=500');
+      // las reglas RLS devuelven solo las consultas propias, o todas si la cuenta es admin
+      const rows = await sb('log_ia_detalle?select=*&order=created_at.desc&limit=500');
       state.log = rows.reverse().map(r => ({
-        fecha: new Date(r.created_at).toLocaleString('es-CO'), tipo: r.tipo, escenario: r.escenario || '', semana: r.semana,
+        fecha: new Date(r.created_at).toLocaleString('es-CO'), usuario: r.email || '(sin cuenta)', tipo: r.tipo, escenario: r.escenario || '', semana: r.semana,
         q: r.pregunta, a: r.respuesta || '', src: r.fuente || '', rev: r.revisado_por || '', fb: r.decision || '',
       }));
       state.logRemote = true;
@@ -415,15 +421,29 @@ async function loadLog() {
   }
   if (!state.logRemote) { try { state.log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch { state.log = []; } }
   $('#clearLogBtn').style.display = state.logRemote ? 'none' : '';
-  $('#logNote').textContent = state.logRemote
-    ? 'Registro central en Supabase (tabla log_ia): incluye las preguntas y briefings de todos los usuarios. Últimos 500.'
-    : 'El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.';
+  $('#logNote').textContent = !state.logRemote
+    ? 'El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.'
+    : state.isAdmin
+      ? 'Registro central en Supabase: preguntas y briefings de todos los usuarios (eres administrador). Últimos 500.'
+      : 'Tus preguntas y briefings guardados en Supabase. Solo tú y el administrador pueden verlos.';
+  renderLogUsers();
   renderLog();
+}
+// filtro por usuario, solo para el administrador
+function renderLogUsers() {
+  $('#logUserField').hidden = !state.isAdmin;
+  if (!state.isAdmin) return;
+  const counts = new Map();
+  for (const r of state.log) counts.set(r.usuario, (counts.get(r.usuario) || 0) + 1);
+  if (state.logUser && !counts.has(state.logUser)) state.logUser = '';
+  $('#logUserSel').innerHTML = `<option value="">Todos (${state.log.length})</option>` +
+    [...counts].sort((a, b) => b[1] - a[1]).map(([u, n]) => `<option value="${esc(u)}" ${u === state.logUser ? 'selected' : ''}>${esc(u)} (${n})</option>`).join('');
 }
 function saveLog() { try { localStorage.setItem(LOG_KEY, JSON.stringify(state.log)); } catch { /* sin almacenamiento */ } }
 function addLog(entry) {
-  const e = { fecha: new Date().toLocaleString('es-CO'), escenario: state.isUser ? 'archivo propio' : state.scenario, ...entry };
+  const e = { fecha: new Date().toLocaleString('es-CO'), usuario: state.user ? state.user.email : '', escenario: state.isUser ? 'archivo propio' : state.scenario, ...entry };
   state.log.push(e);
+  if (state.isAdmin) renderLogUsers();
   renderLog();
   if (!state.logRemote) { saveLog(); return; }
   const cut = (s, n) => (s == null || s === '' ? null : String(s).slice(0, n));
@@ -493,9 +513,10 @@ function renderBriefing() {
   $('#briefFoot').textContent = `Borrador generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
 }
 function renderLog() {
-  const rows = state.log;
-  $('#logTable').innerHTML = `<thead><tr><th>Fecha</th><th>Tipo</th><th>Escenario</th><th>Semana</th><th>Pregunta / briefing</th><th>Respuesta</th><th>Revisado por</th></tr></thead><tbody>` +
-    (rows.length ? rows.slice().reverse().map(r => `<tr><td>${esc(r.fecha)}</td><td>${esc(r.tipo)}</td><td>${esc(r.escenario ? scenarioName(r.escenario) : '')}</td><td>${esc(r.semana)}</td><td>${esc(r.q).slice(0, 160)}</td><td>${esc(r.a).slice(0, 220)}</td><td>${esc(r.rev)}</td></tr>`).join('') : '<tr><td colspan="7">Aún no hay registros. Haz preguntas al asistente o aprueba un briefing.</td></tr>') + '</tbody>';
+  const showUser = state.isAdmin;
+  const rows = state.log.filter(r => !showUser || !state.logUser || r.usuario === state.logUser);
+  $('#logTable').innerHTML = `<thead><tr><th>Fecha</th>${showUser ? '<th>Usuario</th>' : ''}<th>Tipo</th><th>Escenario</th><th>Semana</th><th>Pregunta / briefing</th><th>Respuesta</th><th>Revisado por</th></tr></thead><tbody>` +
+    (rows.length ? rows.slice().reverse().map(r => `<tr><td>${esc(r.fecha)}</td>${showUser ? `<td>${esc(r.usuario)}</td>` : ''}<td>${esc(r.tipo)}</td><td>${esc(r.escenario ? scenarioName(r.escenario) : '')}</td><td>${esc(r.semana)}</td><td>${esc(r.q).slice(0, 160)}</td><td>${esc(r.a).slice(0, 220)}</td><td>${esc(r.rev)}</td></tr>`).join('') : `<tr><td colspan="${showUser ? 8 : 7}">Aún no hay registros. Haz preguntas al asistente o aprueba un briefing.</td></tr>`) + '</tbody>';
 }
 function renderChips() {
   const c = state.channels[0] || 'Google Ads';
@@ -583,8 +604,8 @@ function exportWorkbook() {
   const wb = XLSX.utils.book_new();
   const logName = state.wb.SheetNames.find(n => norm(n) === 'log ia') || 'log_ia';
   const existing = state.wb.Sheets[logName] ? sheetRows(state.wb.Sheets[logName]) : [];
-  const header = ['Fecha', 'Tipo', 'Escenario', 'Semana', 'Pregunta / briefing', 'Respuesta', 'Fuente', 'Revisado por', 'Decisión / feedback'];
-  const rows = existing.map(r => header.map(h => r[h] ?? '')).concat(state.log.map(r => [r.fecha, r.tipo, r.escenario || '', r.semana, r.q, r.a, r.src, r.rev, r.fb]));
+  const header = ['Fecha', 'Usuario', 'Tipo', 'Escenario', 'Semana', 'Pregunta / briefing', 'Respuesta', 'Fuente', 'Revisado por', 'Decisión / feedback'];
+  const rows = existing.map(r => header.map(h => r[h] ?? '')).concat(state.log.map(r => [r.fecha, r.usuario || '', r.tipo, r.escenario || '', r.semana, r.q, r.a, r.src, r.rev, r.fb]));
   for (const n of state.wb.SheetNames) if (n !== logName) XLSX.utils.book_append_sheet(wb, state.wb.Sheets[n], n);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), logName);
   XLSX.writeFile(wb, 'kpis_marketing_con_log.xlsx');
@@ -622,9 +643,61 @@ window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth =
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); loadFile(e.dataTransfer.files[0]); });
 
-(async () => {
+$('#logUserSel').addEventListener('change', e => { state.logUser = e.target.value; renderLog(); });
+
+// ---------- cuentas ----------
+async function startApp() {
   await loadScenarios();
   if (window.XLSX) await loadDefault();
   else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
   await loadLog();
+}
+function showGate(msg = '', cls = '') {
+  document.body.classList.add('locked');
+  $('#authGate').hidden = false;
+  $('#userBox').hidden = true;
+  $('#authMsg').textContent = msg; $('#authMsg').className = 'gate-msg ' + cls;
+}
+async function onSignedIn(user) {
+  state.user = user;
+  try { state.isAdmin = (await sb(`perfiles?select=rol&id=eq.${user.id}`))[0]?.rol === 'admin'; } catch { state.isAdmin = false; }
+  $('#authGate').hidden = true;
+  document.body.classList.remove('locked');
+  $('#userEmail').textContent = user.email;
+  $('#userRole').textContent = state.isAdmin ? 'Administrador' : 'Usuario';
+  $('#userRole').className = 'role' + (state.isAdmin ? ' admin' : '');
+  $('#userBox').hidden = false;
+  await startApp();
+}
+const AUTH_ERRORS = [
+  [/invalid login credentials/i, 'Correo o contraseña incorrectos.'],
+  [/email not confirmed/i, 'Tu correo aún no está confirmado. Revisa tu bandeja de entrada (y spam).'],
+  [/already registered|already been registered/i, 'Ese correo ya tiene una cuenta. Usa «Entrar».'],
+  [/password should be at least/i, 'La contraseña debe tener al menos 6 caracteres.'],
+  [/signups not allowed|signup.*disabled/i, 'La creación de cuentas está desactivada. Pide acceso al administrador.'],
+  [/rate limit/i, 'Demasiados intentos. Espera unos minutos y vuelve a probar.'],
+];
+const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e.message)) || [, e.message])[1];
+
+$('#authForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const signup = e.submitter && e.submitter.value === 'signup';
+  const email = $('#authEmail').value.trim(), password = $('#authPass').value;
+  showGate(signup ? 'Creando la cuenta…' : 'Entrando…');
+  const { data, error } = signup
+    ? await SB.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
+    : await SB.auth.signInWithPassword({ email, password });
+  if (error) return showGate(authError(error), 'err');
+  if (!data.session) return showGate('Cuenta creada. Te enviamos un correo para confirmarla; después vuelve aquí y pulsa «Entrar».', 'ok');
+  $('#authPass').value = '';
+  await onSignedIn(data.session.user);
+});
+$('#logoutBtn').addEventListener('click', async () => { await SB.auth.signOut(); location.reload(); });
+
+(async () => {
+  if (!DB) return startApp();  // sin Supabase no hay cuentas: la app usa los Excel
+  if (!SB) { showGate('No se pudo cargar el módulo de cuentas de Supabase. Revisa tu conexión y recarga la página.', 'err'); return; }
+  const { data } = await SB.auth.getSession();
+  if (data.session) await onSignedIn(data.session.user);
+  else showGate();
 })();
