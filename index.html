@@ -25,13 +25,16 @@
         <span id="srcLabel">Cargando Excel…</span>
       </div>
       <div class="source-actions">
+        <label class="field">Escenario
+          <select id="escSel" aria-label="Escenario"></select>
+        </label>
         <label class="field">Semana
           <select id="weekSel" aria-label="Semana"></select>
         </label>
         <label class="btn primary" for="fileInput">Cargar mi Excel</label>
         <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
         <a class="btn" href="data/kpis_marketing.xlsx" download>Descargar Excel base</a>
-        <button class="btn ghost" id="reloadBtn" title="Volver al Excel publicado">Restablecer</button>
+        <button class="btn ghost" id="reloadBtn" title="Volver a los datos publicados">Restablecer</button>
       </div>
     </div>
   </header>
@@ -124,7 +127,7 @@
             <button class="btn ghost" id="clearLogBtn">Vaciar registro</button>
           </div>
           <div class="table-wrap"><table id="logTable" class="t small"></table></div>
-          <p class="note">El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.</p>
+          <p class="note" id="logNote">El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.</p>
         </div>
       </div>
     </section>
@@ -132,10 +135,11 @@
 
   <footer class="foot">
     Prototipo académico · Innovación Tech III – Desarrollo de modelos de negocio con IA · Pablo Esteban de Francisco · 2026.
-    Motor de borrador basado en reglas sobre el Excel (sin enviar datos a terceros).
+    Motor de borrador basado en reglas sobre los datos (no envía datos a ningún modelo de IA externo). Escenarios simulados: no son resultados reales.
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="config.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,11 +1,24 @@
 /* Copiloto de Marketing IA · Yango — prototipo borrador.
-   Todo se calcula en el navegador a partir del Excel (data/kpis_marketing.xlsx o el que cargue el usuario). */
+   Todo se calcula en el navegador a partir de Supabase (si está configurado en config.js)
+   o del Excel del escenario elegido (data/*.xlsx), o del Excel que cargue el usuario. */
 'use strict';
 
 const DEFAULT_URL = 'data/kpis_marketing.xlsx';
 const LOG_KEY = 'copiloto_yango_log';
+const CFG = window.COPILOTO_CONFIG || {};
+const DB = CFG.supabaseUrl && CFG.supabaseAnonKey ? { url: CFG.supabaseUrl.replace(/\/+$/, ''), key: CFG.supabaseAnonKey } : null;
+const FILE_SCENARIOS = CFG.escenarios && CFG.escenarios.length ? CFG.escenarios : [{ id: 'base', nombre: 'Base', archivo: DEFAULT_URL }];
+// id anónimo por navegador para medir adopción en log_ia (sin datos personales)
+const SESSION = (() => {
+  try {
+    let s = localStorage.getItem('copiloto_sesion');
+    if (!s) { s = Math.random().toString(36).slice(2, 10); localStorage.setItem('copiloto_sesion', s); }
+    return s;
+  } catch { return ''; }
+})();
 
 const state = {
+  scenarios: FILE_SCENARIOS, scenario: FILE_SCENARIOS[0].id, logRemote: false,
   wb: null, source: '', isUser: false,
   data: new Map(),   // semana -> Map(canal -> {inv, imp, clics, conv, ing})
   weeks: [], channels: [], starts: new Map(), // semana -> Date
@@ -345,10 +358,83 @@ function answer(q) {
   return { text: 'No encuentro ese dato en la hoja. Solo respondo con cifras de «datos_crudos», «diccionario» y «presupuesto». Prueba con: "¿qué canal tuvo el peor ROAS?", "¿cómo calculamos el CPA?" o "¿cómo vamos frente al presupuesto?".', src: 'regla: no inventar cifras' };
 }
 
+// ---------- Supabase (API REST) ----------
+async function sb(path, opts = {}) {
+  const r = await fetch(`${DB.url}/rest/v1/${path}`, {
+    ...opts,
+    headers: { apikey: DB.key, Authorization: `Bearer ${DB.key}`, 'Content-Type': 'application/json', ...opts.headers },
+  });
+  if (!r.ok) throw new Error(`Supabase ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return r.status === 201 || r.status === 204 ? null : r.json();
+}
+const scenarioName = id => (state.scenarios.find(s => s.id === id) || { nombre: id }).nombre;
+
+// Convierte las tablas en un libro con las mismas pestañas y encabezados del Excel, para reutilizar parseWorkbook.
+async function dbWorkbook(scenario) {
+  const [datos, dict, pres] = await Promise.all([
+    sb(`datos_crudos?select=*&escenario=eq.${encodeURIComponent(scenario)}&order=semana,canal`),
+    sb('diccionario?select=*&order=orden'),
+    sb('presupuesto?select=*&order=mes,canal'),
+  ]);
+  if (!datos.length) throw new Error(`la tabla datos_crudos no tiene filas del escenario «${scenario}»`);
+  const wb = XLSX.utils.book_new();
+  const add = (name, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
+  add('datos_crudos', datos.map(r => ({
+    'Semana': r.semana, 'Fecha inicio': r.fecha_inicio || '', 'Canal': r.canal, 'Inversión (USD)': +r.inversion,
+    'Impresiones': +r.impresiones, 'Clics': +r.clics, 'Conversiones': +r.conversiones, 'Ingresos atribuidos (USD)': +r.ingresos_atribuidos,
+  })));
+  add('diccionario', dict.map(r => ({ 'KPI': r.kpi, 'Definición única': r.definicion || '', 'Fórmula': r.formula || '', 'Dueño': r.dueno || '', 'Meta': r.meta || '' })));
+  add('presupuesto', pres.map(r => ({ 'Mes': r.mes, 'Canal': r.canal, 'Presupuesto (USD)': +r.presupuesto })));
+  return wb;
+}
+async function loadScenarios() {
+  if (DB) {
+    try {
+      const rows = await sb('escenarios?select=id,nombre&order=orden');
+      if (rows.length) state.scenarios = rows;
+    } catch { /* se usan los escenarios de config.js */ }
+  }
+  if (!state.scenarios.some(s => s.id === state.scenario)) state.scenario = state.scenarios[0].id;
+  $('#escSel').innerHTML = state.scenarios.map(s => `<option value="${esc(s.id)}" ${s.id === state.scenario ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('');
+}
+
 // ---------- registro ----------
-function loadLog() { try { state.log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch { state.log = []; } }
+async function loadLog() {
+  if (DB) {
+    try {
+      const rows = await sb('log_ia?select=*&order=created_at.desc&limit=500');
+      state.log = rows.reverse().map(r => ({
+        fecha: new Date(r.created_at).toLocaleString('es-CO'), tipo: r.tipo, escenario: r.escenario || '', semana: r.semana,
+        q: r.pregunta, a: r.respuesta || '', src: r.fuente || '', rev: r.revisado_por || '', fb: r.decision || '',
+      }));
+      state.logRemote = true;
+    } catch (e) {
+      state.logRemote = false;
+      renderAlerts([['err', `No pude leer el registro de Supabase (${esc(e.message)}). Se usa el registro de este navegador.`]]);
+    }
+  }
+  if (!state.logRemote) { try { state.log = JSON.parse(localStorage.getItem(LOG_KEY) || '[]'); } catch { state.log = []; } }
+  $('#clearLogBtn').style.display = state.logRemote ? 'none' : '';
+  $('#logNote').textContent = state.logRemote
+    ? 'Registro central en Supabase (tabla log_ia): incluye las preguntas y briefings de todos los usuarios. Últimos 500.'
+    : 'El registro vive en este navegador. Descarga el Excel para guardarlo en la pestaña log_ia y medir calidad y adopción.';
+  renderLog();
+}
 function saveLog() { try { localStorage.setItem(LOG_KEY, JSON.stringify(state.log)); } catch { /* sin almacenamiento */ } }
-function addLog(entry) { state.log.push({ fecha: new Date().toLocaleString('es-CO'), ...entry }); saveLog(); renderLog(); }
+function addLog(entry) {
+  const e = { fecha: new Date().toLocaleString('es-CO'), escenario: state.isUser ? 'archivo propio' : state.scenario, ...entry };
+  state.log.push(e);
+  renderLog();
+  if (!state.logRemote) { saveLog(); return; }
+  const cut = (s, n) => (s == null || s === '' ? null : String(s).slice(0, n));
+  sb('log_ia', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      tipo: e.tipo, escenario: cut(e.escenario, 40), semana: e.semana, pregunta: cut(e.q, 1000) || '—', respuesta: cut(e.a, 5000),
+      fuente: cut(e.src, 300), revisado_por: cut(e.rev, 120), decision: cut(e.fb, 1000), sesion: SESSION || null,
+    }),
+  }).catch(err => renderAlerts([['err', `No se pudo guardar en Supabase: ${esc(err.message)}`]]));
+}
 
 // ---------- render ----------
 function renderAlerts(list) {
@@ -408,8 +494,8 @@ function renderBriefing() {
 }
 function renderLog() {
   const rows = state.log;
-  $('#logTable').innerHTML = `<thead><tr><th>Fecha</th><th>Tipo</th><th>Semana</th><th>Pregunta / briefing</th><th>Respuesta</th><th>Revisado por</th></tr></thead><tbody>` +
-    (rows.length ? rows.slice().reverse().map(r => `<tr><td>${esc(r.fecha)}</td><td>${esc(r.tipo)}</td><td>${esc(r.semana)}</td><td>${esc(r.q).slice(0, 160)}</td><td>${esc(r.a).slice(0, 220)}</td><td>${esc(r.rev)}</td></tr>`).join('') : '<tr><td colspan="6">Aún no hay registros. Haz preguntas al asistente o aprueba un briefing.</td></tr>') + '</tbody>';
+  $('#logTable').innerHTML = `<thead><tr><th>Fecha</th><th>Tipo</th><th>Escenario</th><th>Semana</th><th>Pregunta / briefing</th><th>Respuesta</th><th>Revisado por</th></tr></thead><tbody>` +
+    (rows.length ? rows.slice().reverse().map(r => `<tr><td>${esc(r.fecha)}</td><td>${esc(r.tipo)}</td><td>${esc(r.escenario ? scenarioName(r.escenario) : '')}</td><td>${esc(r.semana)}</td><td>${esc(r.q).slice(0, 160)}</td><td>${esc(r.a).slice(0, 220)}</td><td>${esc(r.rev)}</td></tr>`).join('') : '<tr><td colspan="7">Aún no hay registros. Haz preguntas al asistente o aprueba un briefing.</td></tr>') + '</tbody>';
 }
 function renderChips() {
   const c = state.channels[0] || 'Google Ads';
@@ -440,7 +526,9 @@ function ask(q) {
 }
 
 // ---------- carga ----------
-function applyWorkbook(wb, source, isUser) {
+// kind: 'db' (Supabase), 'excel' (Excel publicado del escenario) o 'user' (archivo cargado por el usuario)
+function applyWorkbook(wb, source, kind, extraAlerts = []) {
+  const isUser = kind === 'user';
   const res = parseWorkbook(wb);
   if (res.errors.length) {
     renderAlerts([['err', `<b>No pude usar ${esc(source)}:</b><ul>${res.errors.map(e => `<li>${esc(e)}</li>`).join('')}</ul>Revisa la pestaña «instrucciones» del Excel base.`]]);
@@ -449,13 +537,16 @@ function applyWorkbook(wb, source, isUser) {
   }
   Object.assign(state, { wb, source, isUser, data: res.data, weeks: res.weeks, channels: res.channels, starts: res.starts, dict: res.dict, budget: res.budget });
   state.week = state.weeks.at(-1);
-  const al = [];
+  const al = [...extraAlerts];
   if (isUser) al.push(['ok', `Excel cargado: <b>${esc(source)}</b> · ${state.weeks.length} semana(s) (${state.weeks[0]}–${state.week}) · canales: ${esc(state.channels.join(', '))}. Los datos solo viven en tu navegador.`]);
   if (res.warnings.length) al.push(['', `<b>Validaciones de calidad de datos:</b><ul>${res.warnings.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`]);
   renderAlerts(al);
-  setSource(isUser ? `Tu archivo: ${source} (solo en este navegador)` : `Fuente: ${source} (Excel publicado)`, isUser ? 'user' : 'ok');
+  const escName = scenarioName(state.scenario);
+  setSource(isUser ? `Tu archivo: ${source} (solo en este navegador)`
+    : kind === 'db' ? `Fuente: base de datos Supabase · escenario ${escName}`
+    : `Fuente: ${source} (Excel publicado) · escenario ${escName}`, isUser ? 'user' : 'ok');
   $('#chatLog').innerHTML = '';
-  pushMsg('bot', `Hola, soy el asistente de Marketing. Respondo solo con las cifras del Excel (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales). ¿Qué quieres saber?`);
+  pushMsg('bot', `Hola, soy el asistente de Marketing. Respondo solo con las cifras ${isUser ? 'de tu Excel' : `del escenario ${escName}`} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales). ¿Qué quieres saber?`);
   renderAll();
   return true;
 }
@@ -463,20 +554,27 @@ function setSource(text, cls) { $('#srcLabel').textContent = text; $('#srcDot').
 const readWb = buf => XLSX.read(buf, { type: 'array' });
 
 async function loadDefault() {
+  const extra = [];
+  if (DB) {
+    setSource('Cargando datos de Supabase…');
+    try { applyWorkbook(await dbWorkbook(state.scenario), 'Supabase', 'db'); return; }
+    catch (e) { extra.push(['err', `No pude leer Supabase (${esc(e.message)}). Muestro el Excel publicado del escenario.`]); }
+  }
+  const url = (FILE_SCENARIOS.find(s => s.id === state.scenario) || {}).archivo || DEFAULT_URL;
   setSource('Cargando Excel…');
   try {
-    const r = await fetch(`${DEFAULT_URL}?v=${Date.now()}`, { cache: 'no-store' });
+    const r = await fetch(`${url}?v=${Date.now()}`, { cache: 'no-store' });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    applyWorkbook(readWb(await r.arrayBuffer()), DEFAULT_URL, false);
+    applyWorkbook(readWb(await r.arrayBuffer()), url, 'excel', extra);
   } catch (e) {
     setSource('No se pudo leer el Excel publicado', 'err');
-    renderAlerts([['err', `No pude descargar <b>${DEFAULT_URL}</b> (${esc(e.message)}). Usa «Cargar mi Excel».`]]);
+    renderAlerts([...extra, ['err', `No pude descargar <b>${esc(url)}</b> (${esc(e.message)}). Usa «Cargar mi Excel».`]]);
   }
 }
 async function loadFile(file) {
   if (!file) return;
   if (!/\.xlsx?$/i.test(file.name)) { renderAlerts([['err', 'El archivo debe ser .xlsx o .xls.']]); return; }
-  try { applyWorkbook(readWb(await file.arrayBuffer()), file.name, true); }
+  try { applyWorkbook(readWb(await file.arrayBuffer()), file.name, 'user'); }
   catch (e) { renderAlerts([['err', `No pude leer ${esc(file.name)}: ${esc(e.message)}`]]); }
 }
 
@@ -485,8 +583,8 @@ function exportWorkbook() {
   const wb = XLSX.utils.book_new();
   const logName = state.wb.SheetNames.find(n => norm(n) === 'log ia') || 'log_ia';
   const existing = state.wb.Sheets[logName] ? sheetRows(state.wb.Sheets[logName]) : [];
-  const header = ['Fecha', 'Tipo', 'Semana', 'Pregunta / briefing', 'Respuesta', 'Fuente', 'Revisado por', 'Decisión / feedback'];
-  const rows = existing.map(r => header.map(h => r[h] ?? '')).concat(state.log.map(r => [r.fecha, r.tipo, r.semana, r.q, r.a, r.src, r.rev, r.fb]));
+  const header = ['Fecha', 'Tipo', 'Escenario', 'Semana', 'Pregunta / briefing', 'Respuesta', 'Fuente', 'Revisado por', 'Decisión / feedback'];
+  const rows = existing.map(r => header.map(h => r[h] ?? '')).concat(state.log.map(r => [r.fecha, r.tipo, r.escenario || '', r.semana, r.q, r.a, r.src, r.rev, r.fb]));
   for (const n of state.wb.SheetNames) if (n !== logName) XLSX.utils.book_append_sheet(wb, state.wb.Sheets[n], n);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), logName);
   XLSX.writeFile(wb, 'kpis_marketing_con_log.xlsx');
@@ -498,6 +596,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + b.dataset.tab));
 }));
 $('#weekSel').addEventListener('change', e => { state.week = +e.target.value; renderKPIs(); renderBriefing(); });
+$('#escSel').addEventListener('change', e => { state.scenario = e.target.value; loadDefault(); });
 $('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
 $('#reloadBtn').addEventListener('click', loadDefault);
 $('#regenBtn').addEventListener('click', renderBriefing);
@@ -523,6 +622,9 @@ window.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth =
 window.addEventListener('dragover', e => e.preventDefault());
 window.addEventListener('drop', e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove('dragging'); loadFile(e.dataTransfer.files[0]); });
 
-loadLog();
-if (window.XLSX) loadDefault();
-else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
+(async () => {
+  await loadScenarios();
+  if (window.XLSX) await loadDefault();
+  else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
+  await loadLog();
+})();
