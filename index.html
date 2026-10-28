@@ -22,6 +22,9 @@
     <div class="source">
       <div class="user-box" id="userBox" hidden>
         <span id="userEmail"></span><span class="role" id="userRole"></span>
+        <label class="sub-toggle" title="Cada lunes recibes en tu correo el briefing semanal generado con IA">
+          <input type="checkbox" id="subToggle"> Resumen semanal por correo
+        </label>
         <button class="btn ghost" id="logoutBtn" type="button">Cerrar sesión</button>
       </div>
       <div class="source-info">
@@ -120,7 +123,9 @@
           <div class="ai-foot" id="briefFoot"></div>
           <div class="row-actions">
             <input id="reviewer" type="text" placeholder="Revisado por (nombre del analista)" aria-label="Revisado por">
+            <button class="btn primary" id="aiBriefBtn" hidden>Resumen detallado con IA</button>
             <button class="btn" id="regenBtn">Regenerar</button>
+            <button class="btn" id="sendNowBtn" hidden>Enviar resumen semanal ahora</button>
             <button class="btn" id="copyBtn">Copiar texto</button>
             <button class="btn primary" id="approveBtn">Aprobar y registrar</button>
           </div>

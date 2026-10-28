@@ -44,6 +44,25 @@ El rol solo se puede cambiar desde el SQL Editor; ningún usuario puede hacerse 
 
 > En el plan gratuito, Supabase pausa los proyectos tras ~1 semana sin actividad; se reactivan desde el panel.
 
+## Asistente IA y resumen semanal por correo
+
+- **Asistente IA** (`api/asistente.js`): responde en lenguaje natural con **Claude** (`claude-opus-5-5`). En cada consulta el servidor verifica la sesión, trae de Supabase los datos del escenario elegido (todas las semanas, diccionario y presupuesto), calcula ROAS, CPA, variaciones y avance del presupuesto, y se los entrega a Claude, que solo puede usar esas cifras. Recuerda la conversación (últimos 8 mensajes). En la pestaña Briefing, **Resumen detallado con IA** genera el briefing completo. Límite: 40 consultas por usuario y hora. Si la IA no está configurada o falla, responde el motor de reglas.
+- **Resumen semanal** (`api/resumen-semanal.js`): cada **lunes a las 12:00 UTC** (7:00 a. m. en Colombia; ver `crons` en `vercel.json`) genera el briefing de la última semana del escenario *Base* y lo envía al correo de cada usuario con **«Resumen semanal por correo»** activado (casilla junto a su usuario). El administrador puede enviarlo en el momento con **Enviar resumen semanal ahora**.
+
+Variables de entorno en **Vercel → Settings → Environment Variables** (después: **Redeploy**):
+
+| Variable | Valor |
+|---|---|
+| `ANTHROPIC_API_KEY` | clave de [console.anthropic.com](https://console.anthropic.com) (API de pago por uso) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API Keys → **secret key** (solo aquí, nunca en `config.js`) |
+| `CRON_SECRET` | una frase larga cualquiera; Vercel la usa para autorizar el envío programado |
+| `SMTP_USER` | la cuenta de Gmail que envía los correos |
+| `SMTP_PASS` | **contraseña de aplicación** de esa cuenta (Google → Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones) |
+
+Opcionales: `RESUMEN_ESCENARIO` (por defecto `base`), `SMTP_HOST` / `SMTP_PORT` (por defecto Gmail, 465), `APP_URL`.
+
+Los correos se generan automáticamente con IA, sin revisión previa: llevan un aviso para revisarlos antes de decidir.
+
 ## Tablas
 
 | Tabla | Contenido |
@@ -53,7 +72,7 @@ El rol solo se puede cambiar desde el SQL Editor; ningún usuario puede hacerse 
 | `diccionario` | definición única, fórmula, dueño y meta de cada KPI |
 | `presupuesto` | presupuesto por mes (AAAA-MM) y canal |
 | `log_ia` | preguntas y briefings: fecha, cuenta (`user_id`), tipo, escenario, semana, respuesta, fuente, revisor |
-| `perfiles` | una fila por cuenta: correo y rol (`usuario` o `admin`); se crea sola al registrarse |
+| `perfiles` | una fila por cuenta: correo, rol (`usuario` o `admin`) y si recibe el resumen semanal; se crea sola al registrarse |
 | `log_ia_detalle` | vista de `log_ia` con el correo de quien consultó |
 
 Para ver qué consultó cada usuario: entra a la app con una cuenta **admin** → pestaña **Registro** (filtro por usuario y descarga a Excel), o en Supabase **Table Editor → log_ia_detalle** (exportable a CSV).
@@ -71,7 +90,11 @@ Reglas: no cambies los nombres de las pestañas ni de los encabezados del Excel;
 ```
 index.html            interfaz
 styles.css            estilos
-app.js                lectura de datos (Supabase o Excel), métricas, briefing y asistente
+app.js                lectura de datos (Supabase o Excel), métricas, briefing, asistente y cuentas
+api/asistente.js      asistente IA (Claude) — función de servidor de Vercel
+api/resumen-semanal.js  envío semanal del briefing por correo (Vercel Cron)
+lib/copiloto.js       lógica compartida de las funciones (datos, métricas, Claude)
+package.json          dependencias de las funciones (SDK de Anthropic, nodemailer)
 config.js             conexión a Supabase y lista de escenarios
 data/*.xlsx           un Excel por escenario (respaldo sin base de datos)
 supabase/schema.sql   tablas y seguridad (RLS)

@@ -53,6 +53,9 @@ create table if not exists public.perfiles (
   created_at timestamptz not null default now()
 );
 
+-- preferencia del resumen semanal por correo (el usuario la cambia desde la app)
+alter table public.perfiles add column if not exists recibir_resumen boolean not null default true;
+
 create or replace function public.crear_perfil() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
@@ -118,6 +121,7 @@ drop policy if exists "lectura con cuenta"      on public.presupuesto;
 drop policy if exists "ver propias o admin"     on public.log_ia;
 drop policy if exists "registrar propias"       on public.log_ia;
 drop policy if exists "ver perfil propio o admin" on public.perfiles;
+drop policy if exists "editar preferencias propias" on public.perfiles;
 
 create policy "lectura con cuenta" on public.escenarios   for select to authenticated using (true);
 create policy "lectura con cuenta" on public.datos_crudos for select to authenticated using (true);
@@ -129,3 +133,8 @@ create policy "registrar propias" on public.log_ia for insert to authenticated
   with check (user_id = (select auth.uid()));
 create policy "ver perfil propio o admin" on public.perfiles for select to authenticated
   using (id = (select auth.uid()) or (select public.es_admin()));
+-- cada usuario edita solo su propia fila y solo la columna recibir_resumen (el rol no se puede tocar)
+create policy "editar preferencias propias" on public.perfiles for update to authenticated
+  using (id = (select auth.uid())) with check (id = (select auth.uid()));
+revoke update on public.perfiles from anon, authenticated;
+grant update (recibir_resumen) on public.perfiles to authenticated;

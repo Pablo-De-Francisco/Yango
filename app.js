@@ -21,7 +21,7 @@ const SESSION = (() => {
 
 const state = {
   scenarios: FILE_SCENARIOS, scenario: FILE_SCENARIOS[0].id, logRemote: false,
-  user: null, isAdmin: false, logUser: '',
+  user: null, isAdmin: false, logUser: '', chatHist: [],
   wb: null, source: '', isUser: false,
   data: new Map(),   // semana -> Map(canal -> {inv, imp, clics, conv, ing})
   weeks: [], channels: [], starts: new Map(), // semana -> Date
@@ -511,6 +511,22 @@ function renderBriefing() {
   $('#mailSubject').textContent = `Briefing IA · semana ${state.week}`;
   $('#briefing').innerHTML = currentBrief.html;
   $('#briefFoot').textContent = `Borrador generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
+  $('#aiBriefBtn').hidden = !aiAvailable();
+  $('#sendNowBtn').hidden = !(aiAvailable() && state.isAdmin);
+}
+async function renderAIBriefing() {
+  const btn = $('#aiBriefBtn');
+  btn.disabled = true; btn.textContent = 'Generando resumen…';
+  try {
+    const r = await askAI('resumen');
+    $('#briefing').innerHTML = aiToHtml(r.texto);
+    currentBrief = { ...currentBrief, decision: '' };
+    $('#briefFoot').textContent = `Resumen generado con IA desde los datos del escenario ${r.escenario}, semana ${r.semana} · pendiente de revisión por: analista de marketing`;
+  } catch (e) {
+    $('#briefFoot').textContent = `No se pudo generar el resumen con IA: ${e.message}`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Resumen detallado con IA';
+  }
 }
 function renderLog() {
   const showUser = state.isAdmin;
@@ -537,11 +553,60 @@ function pushMsg(who, text, src) {
   if (src) { const s = document.createElement('span'); s.className = 'src'; s.textContent = 'Fuente: ' + src; el.appendChild(s); }
   $('#chatLog').appendChild(el);
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+  return el;
 }
-function ask(q) {
+
+// ---------- asistente IA (función /api/asistente con Claude) ----------
+// Disponible con sesión iniciada y datos de Supabase; con un Excel propio se usan las reglas locales.
+const AI_URL = CFG.asistenteIA || 'api/asistente';
+const aiAvailable = () => !!(SB && state.user && !state.isUser);
+async function askAI(modo, pregunta = '') {
+  const session = (await SB.auth.getSession()).data.session;
+  const r = await fetch(AI_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+    body: JSON.stringify({ modo, pregunta, escenario: state.scenario, semana: state.week, historial: modo === 'pregunta' ? state.chatHist : [] }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `error ${r.status}`);
+  return data;
+}
+// texto del asistente ("## título", "- punto") -> HTML seguro para el editor del briefing
+function aiToHtml(text) {
+  let html = '', list = false;
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    const item = line.match(/^[-•]\s+(.*)/);
+    if (list && !item) { html += '</ul>'; list = false; }
+    if (!line) continue;
+    if (item) { if (!list) { html += '<ul>'; list = true; } html += `<li>${esc(item[1])}</li>`; }
+    else if (/^#{1,3}\s/.test(line)) html += `<h3>${esc(line.replace(/^#{1,3}\s+/, ''))}</h3>`;
+    else html += `<p>${esc(line)}</p>`;
+  }
+  return html + (list ? '</ul>' : '');
+}
+
+async function ask(q) {
   if (!q.trim() || !state.data.size) return;
   pushMsg('user', q);
-  const a = answer(q);
+  let a;
+  if (aiAvailable()) {
+    const pending = pushMsg('bot', 'Analizando los datos…');
+    pending.classList.add('pending');
+    $('#chatInput').disabled = true;
+    try {
+      const r = await askAI('pregunta', q);
+      a = { text: r.texto + (r.truncada ? '\n(Respuesta recortada por longitud.)' : ''), src: `asistente IA · escenario ${r.escenario}, semana ${r.semana}` };
+      state.chatHist.push({ role: 'user', content: q }, { role: 'assistant', content: r.texto });
+    } catch (e) {
+      const rb = answer(q);
+      a = { text: rb.text, src: `${rb.src} · respuesta por reglas (asistente IA no disponible: ${e.message})` };
+    } finally {
+      pending.remove();
+      $('#chatInput').disabled = false;
+      $('#chatInput').focus();
+    }
+  } else a = answer(q);
   pushMsg('bot', a.text, a.src);
   addLog({ tipo: 'pregunta', semana: state.week, q, a: a.text, src: a.src, rev: '', fb: '' });
 }
@@ -567,7 +632,10 @@ function applyWorkbook(wb, source, kind, extraAlerts = []) {
     : kind === 'db' ? `Fuente: base de datos Supabase · escenario ${escName}`
     : `Fuente: ${source} (Excel publicado) · escenario ${escName}`, isUser ? 'user' : 'ok');
   $('#chatLog').innerHTML = '';
-  pushMsg('bot', `Hola, soy el asistente de Marketing. Respondo solo con las cifras ${isUser ? 'de tu Excel' : `del escenario ${escName}`} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales). ¿Qué quieres saber?`);
+  state.chatHist = [];
+  pushMsg('bot', aiAvailable()
+    ? `Hola, soy el asistente IA de Marketing. Analizo los datos del escenario ${escName} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales) y respondo tus preguntas en lenguaje natural: tendencias, causas, comparaciones o recomendaciones. ¿Qué quieres saber?`
+    : `Hola, soy el asistente de Marketing. Respondo solo con las cifras ${isUser ? 'de tu Excel' : `del escenario ${escName}`} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales). ¿Qué quieres saber?`);
   renderAll();
   return true;
 }
@@ -621,6 +689,7 @@ $('#escSel').addEventListener('change', e => { state.scenario = e.target.value; 
 $('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
 $('#reloadBtn').addEventListener('click', loadDefault);
 $('#regenBtn').addEventListener('click', renderBriefing);
+$('#aiBriefBtn').addEventListener('click', renderAIBriefing);
 $('#copyBtn').addEventListener('click', async () => {
   const text = `Asunto: Briefing IA · semana ${state.week}\n\n${$('#briefing').innerText}`;
   try { await navigator.clipboard.writeText(text); $('#copyBtn').textContent = 'Copiado ✓'; } catch { $('#copyBtn').textContent = 'No se pudo copiar'; }
@@ -660,7 +729,14 @@ function showGate(msg = '', cls = '') {
 }
 async function onSignedIn(user) {
   state.user = user;
-  try { state.isAdmin = (await sb(`perfiles?select=rol&id=eq.${user.id}`))[0]?.rol === 'admin'; } catch { state.isAdmin = false; }
+  let perfil = null;
+  try { perfil = (await sb(`perfiles?select=rol,recibir_resumen&id=eq.${user.id}`))[0]; }
+  catch {  // base sin la columna recibir_resumen (schema.sql anterior): al menos se lee el rol
+    try { perfil = (await sb(`perfiles?select=rol&id=eq.${user.id}`))[0]; } catch { /* sin perfil: usuario normal */ }
+  }
+  state.isAdmin = perfil?.rol === 'admin';
+  $('#subToggle').checked = perfil ? perfil.recibir_resumen !== false : false;
+  $('#subToggle').disabled = !perfil;
   $('#authGate').hidden = true;
   document.body.classList.remove('locked');
   $('#userEmail').textContent = user.email;
@@ -693,6 +769,35 @@ $('#authForm').addEventListener('submit', async e => {
   await onSignedIn(data.session.user);
 });
 $('#logoutBtn').addEventListener('click', async () => { await SB.auth.signOut(); location.reload(); });
+$('#subToggle').addEventListener('change', async e => {
+  const on = e.target.checked;
+  try {
+    await sb(`perfiles?id=eq.${state.user.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ recibir_resumen: on }) });
+    renderAlerts([['ok', on ? `Listo: cada lunes recibirás el resumen semanal en <b>${esc(state.user.email)}</b>.` : 'Listo: ya no recibirás el resumen semanal por correo.']]);
+  } catch (err) {
+    e.target.checked = !on;
+    renderAlerts([['err', `No se pudo guardar la preferencia: ${esc(err.message)}`]]);
+  }
+});
+$('#sendNowBtn').addEventListener('click', async () => {
+  if (!confirm('Se generará el resumen de la última semana y se enviará por correo a todos los usuarios suscritos. ¿Continuar?')) return;
+  const btn = $('#sendNowBtn');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const session = (await SB.auth.getSession()).data.session;
+    const r = await fetch(CFG.resumenSemanal || 'api/resumen-semanal', { method: 'POST', headers: { Authorization: `Bearer ${session ? session.access_token : ''}` } });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `error ${r.status}`);
+    $('#briefFoot').textContent = data.enviados
+      ? `Resumen de la semana ${data.semana} enviado por correo a ${data.enviados} de ${data.total} usuario(s).${data.error ? ' ' + data.error : ''}`
+      : (data.mensaje || 'No se envió ningún correo.');
+    await loadLog();
+  } catch (e) {
+    $('#briefFoot').textContent = `No se pudo enviar el resumen: ${e.message}`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Enviar resumen semanal ahora';
+  }
+});
 
 (async () => {
   if (!DB) return startApp();  // sin Supabase no hay cuentas: la app usa los Excel

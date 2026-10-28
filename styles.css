@@ -132,6 +132,7 @@ main { padding: 16px clamp(16px, 4vw, 40px) 32px; max-width: 1280px; }
 .msg { max-width: 78%; padding: 10px 14px; border-radius: 12px; white-space: pre-line; }
 .msg.user { align-self: flex-end; background: var(--pink); }
 .msg.bot { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+.msg.pending { color: var(--muted); font-style: italic; }
 .msg .src { display: block; margin-top: 6px; color: var(--muted); font-style: italic; font-size: 12px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px 0; }
 .chip { border: 1px solid var(--line); background: #fff; border-radius: 99px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
@@ -147,6 +148,8 @@ main { padding: 16px clamp(16px, 4vw, 40px) 32px; max-width: 1280px; }
 .user-box #userEmail { color: var(--ink); font-weight: 600; }
 .role { padding: 1px 8px; border-radius: 99px; background: #f1f1f2; font-size: 12px; font-weight: 600; }
 .role.admin { background: var(--pink); color: var(--red-dark); }
+.sub-toggle { display: flex; gap: 4px; align-items: center; cursor: pointer; white-space: nowrap; }
+.sub-toggle input { accent-color: var(--red); }
 .gate { padding: 48px 16px; display: grid; place-items: start center; }
 .gate-card { width: min(100%, 420px); }
 .gate-field { display: flex; flex-direction: column; gap: 4px; margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
