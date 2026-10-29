@@ -1,10 +1,10 @@
 // Resumen semanal por correo (función de servidor de Vercel: /api/resumen-semanal).
 // La ejecuta Vercel Cron cada lunes (vercel.json) o un administrador desde la app («Enviar ahora»).
 // Genera el briefing de la última semana con Claude y lo envía a cada usuario con recibir_resumen = true.
-// Variables de entorno en Vercel: ANTHROPIC_API_KEY, SUPABASE_SERVICE_ROLE_KEY (clave secreta), CRON_SECRET,
+// Variables de entorno en Vercel: GEMINI_API_KEY (o ANTHROPIC_API_KEY), SUPABASE_SERVICE_ROLE_KEY (clave secreta), CRON_SECRET,
 // SMTP_USER y SMTP_PASS (p. ej. Gmail + contraseña de aplicación); opcionales SMTP_HOST, SMTP_PORT, RESUMEN_ESCENARIO, APP_URL.
 import nodemailer from 'nodemailer';
-import { bearer, usuario, sbJson, sbFetch, contexto, generar, errorHttp, textoAHtml } from '../lib/copiloto.js';
+import { bearer, usuario, sbJson, sbFetch, contexto, generar, errorHttp, textoAHtml, proveedorIA } from '../lib/copiloto.js';
 
 export const config = { maxDuration: 60 };
 
@@ -41,7 +41,8 @@ export default async function handler(req, res) {
   const quien = await autorizado(req);
   if (!quien) return res.status(401).json({ error: 'No autorizado: solo la tarea programada o un administrador pueden enviar el resumen.' });
 
-  const faltan = ['ANTHROPIC_API_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SMTP_USER', 'SMTP_PASS'].filter(k => !process.env[k]);
+  const faltan = ['SUPABASE_SERVICE_ROLE_KEY', 'SMTP_USER', 'SMTP_PASS'].filter(k => !process.env[k]);
+  if (!proveedorIA()) faltan.unshift('GEMINI_API_KEY');
   if (faltan.length) return res.status(503).json({ error: `Falta configurar en Vercel: ${faltan.join(', ')}.` });
 
   const servicio = { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, token: process.env.SUPABASE_SERVICE_ROLE_KEY };

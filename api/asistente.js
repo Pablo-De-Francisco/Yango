@@ -1,8 +1,8 @@
 // Asistente IA del Copiloto de Marketing (función de servidor de Vercel: POST /api/asistente).
 // 1) Verifica la sesión de Supabase del usuario.  2) Recupera con su token los datos del escenario
-// (las reglas RLS siguen aplicando) y calcula las métricas.  3) Claude responde usando solo esos datos.
-// Variable de entorno en Vercel: ANTHROPIC_API_KEY.
-import { bearer, usuario, sbFetch, contexto, generar, errorHttp } from '../lib/copiloto.js';
+// (las reglas RLS siguen aplicando) y calcula las métricas.  3) La IA (Gemini o Claude) responde usando solo esos datos.
+// Variable de entorno en Vercel: GEMINI_API_KEY (plan gratuito) o ANTHROPIC_API_KEY.
+import { bearer, usuario, sbFetch, contexto, generar, errorHttp, proveedorIA } from '../lib/copiloto.js';
 
 export const config = { maxDuration: 60 };
 
@@ -16,7 +16,7 @@ async function consultasUltimaHora(user, token) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
-  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'El asistente IA no está configurado (falta ANTHROPIC_API_KEY en Vercel).' });
+  if (!proveedorIA()) return res.status(503).json({ error: 'El asistente IA no está configurado (falta GEMINI_API_KEY o ANTHROPIC_API_KEY en Vercel).' });
 
   const token = bearer(req);
   const user = await usuario(token);

@@ -46,14 +46,14 @@ El rol solo se puede cambiar desde el SQL Editor; ningún usuario puede hacerse 
 
 ## Asistente IA y resumen semanal por correo
 
-- **Asistente IA** (`api/asistente.js`): responde en lenguaje natural con **Claude** (`claude-opus-5-5`). En cada consulta el servidor verifica la sesión, trae de Supabase los datos del escenario elegido (todas las semanas, diccionario y presupuesto), calcula ROAS, CPA, variaciones y avance del presupuesto, y se los entrega a Claude, que solo puede usar esas cifras. Recuerda la conversación (últimos 8 mensajes). En la pestaña Briefing, **Resumen detallado con IA** genera el briefing completo. Límite: 40 consultas por usuario y hora. Si la IA no está configurada o falla, responde el motor de reglas.
+- **Asistente IA** (`api/asistente.js`): responde en lenguaje natural con **Gemini** (`gemini-3.8-flash`, plan gratuito, variable `GEMINI_API_KEY`) o con **Claude** (`claude-opus-5-5`, de pago, variable `ANTHROPIC_API_KEY`). En cada consulta el servidor verifica la sesión, trae de Supabase los datos del escenario elegido (todas las semanas, diccionario y presupuesto), calcula ROAS, CPA, variaciones y avance del presupuesto, y se los entrega a Claude, que solo puede usar esas cifras. Recuerda la conversación (últimos 8 mensajes). En la pestaña Briefing, **Resumen detallado con IA** genera el briefing completo. Límite: 40 consultas por usuario y hora. Si la IA no está configurada o falla, responde el motor de reglas.
 - **Resumen semanal** (`api/resumen-semanal.js`): cada **lunes a las 12:00 UTC** (7:00 a. m. en Colombia; ver `crons` en `vercel.json`) genera el briefing de la última semana del escenario *Base* y lo envía al correo de cada usuario con **«Resumen semanal por correo»** activado (casilla junto a su usuario). El administrador puede enviarlo en el momento con **Enviar resumen semanal ahora**.
 
 Variables de entorno en **Vercel → Settings → Environment Variables** (después: **Redeploy**):
 
 | Variable | Valor |
 |---|---|
-| `ANTHROPIC_API_KEY` | clave de [console.anthropic.com](https://console.anthropic.com) (API de pago por uso) |
+| `GEMINI_API_KEY` | clave gratuita de [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (o `ANTHROPIC_API_KEY` para usar Claude, de pago). En el plan gratuito Google puede usar lo enviado para mejorar sus productos: los datos del prototipo son simulados y sin datos personales |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API Keys → **secret key** (solo aquí, nunca en `config.js`) |
 | `CRON_SECRET` | una frase larga cualquiera; Vercel la usa para autorizar el envío programado |
 | `SMTP_USER` | la cuenta de Gmail que envía los correos |
