@@ -9,6 +9,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // Modo celular / escritorio: se aplica antes de pintar la página para que no parpadee (ver app.js → setMode)
+    (function () {
+      var m = null; try { m = localStorage.getItem('yango_modo'); } catch (e) {}
+      var phone = window.matchMedia('(max-width: 760px)').matches;
+      if (m !== 'mobile' && m !== 'desktop') m = phone ? 'mobile' : 'desktop';
+      document.documentElement.classList.toggle('mobile', m === 'mobile');
+      // en un celular, el modo escritorio muestra la página completa (como en un computador), con zoom libre
+      if (m === 'desktop' && phone) document.querySelector('meta[name=viewport]').setAttribute('content', 'width=1200');
+    })();
+  </script>
 </head>
 <body>
   <header class="top">
@@ -19,6 +30,7 @@
         <p class="sub">Briefing · Asistente · Diccionario <span class="badge">MVP · datos simulados</span></p>
       </div>
     </div>
+    <button class="btn mode-btn" id="modeBtn" type="button" aria-label="Cambiar entre modo celular y modo escritorio"></button>
     <div class="source">
       <div class="user-box" id="userBox" hidden>
         <span id="userEmail"></span><span class="role" id="userRole"></span>
@@ -70,10 +82,10 @@
   <div id="alerts" class="alerts" aria-live="polite"></div>
 
   <nav class="tabs" role="tablist">
-    <button role="tab" data-tab="kpis" class="active"><b>1</b> Hoja de KPIs</button>
-    <button role="tab" data-tab="briefing"><b>2</b> Briefing semanal IA</button>
-    <button role="tab" data-tab="chat"><b>3</b> Asistente de preguntas</button>
-    <button role="tab" data-tab="log"><b>4</b> Registro (log_ia)</button>
+    <button role="tab" data-tab="kpis" class="active"><b>1</b><i>📊</i> <span class="tl">Hoja de KPIs</span><span class="ts">KPIs</span></button>
+    <button role="tab" data-tab="briefing"><b>2</b><i>✉️</i> <span class="tl">Briefing semanal IA</span><span class="ts">Briefing</span></button>
+    <button role="tab" data-tab="chat"><b>3</b><i>💬</i> <span class="tl">Asistente de preguntas</span><span class="ts">Asistente</span></button>
+    <button role="tab" data-tab="log"><b>4</b><i>🗂️</i> <span class="tl">Registro (log_ia)</span><span class="ts">Registro</span></button>
   </nav>
 
   <main>

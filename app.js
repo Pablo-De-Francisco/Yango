@@ -683,7 +683,27 @@ function exportWorkbook() {
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
   document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('active', x === b));
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === 'tab-' + b.dataset.tab));
+  if (document.documentElement.classList.contains('mobile')) {
+    // en el asistente se baja hasta la caja de texto; en las demás pestañas, al inicio
+    if (b.dataset.tab === 'chat') $('#chatForm').scrollIntoView({ block: 'end' }); else window.scrollTo(0, 0);
+  }
 }));
+// ---------- modo celular / escritorio (el modo inicial lo pone el script del <head> de index.html) ----------
+function renderModeBtn() {
+  const mobile = document.documentElement.classList.contains('mobile');
+  $('#modeBtn').textContent = mobile ? '🖥️ Escritorio' : '📱 Modo celular';
+  $('#modeBtn').title = mobile ? 'Ver la página como en un computador' : 'Ver la página adaptada al celular';
+}
+$('#modeBtn').addEventListener('click', () => {
+  const mobile = !document.documentElement.classList.contains('mobile');
+  try { localStorage.setItem('yango_modo', mobile ? 'mobile' : 'desktop'); } catch { /* sin almacenamiento: solo esta visita */ }
+  const phone = matchMedia('(max-width: 760px)').matches || screen.width <= 760;
+  // en un celular, pasar a escritorio cambia el ancho de la página: se recarga para aplicarlo bien
+  if (phone) { location.reload(); return; }
+  document.documentElement.classList.toggle('mobile', mobile);
+  renderModeBtn();
+});
+renderModeBtn();
 $('#weekSel').addEventListener('change', e => { state.week = +e.target.value; renderKPIs(); renderBriefing(); });
 $('#escSel').addEventListener('change', e => { state.scenario = e.target.value; loadDefault(); });
 $('#fileInput').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });

@@ -175,3 +175,79 @@ body.dragging::after {
   .msg { max-width: 92%; }
   .bar-row { grid-template-columns: 80px 1fr 46px; }
 }
+
+/* ---------- modo celular (botón «Modo celular» o pantallas pequeñas; clase .mobile en <html>) ---------- */
+.tabs button i, .tabs button .ts { display: none; font-style: normal; }
+.mode-btn { order: 3; }
+html.mobile body { max-width: 520px; margin: 0 auto; font-size: 16px; padding-bottom: calc(72px + env(safe-area-inset-bottom)); box-shadow: 0 0 0 1px var(--line); min-height: 100vh; }
+html.mobile .top { padding: 12px 16px; gap: 10px; }
+html.mobile .top { flex-wrap: wrap; }
+html.mobile .brand { gap: 10px; flex: 1 1 0; min-width: 0; }
+html.mobile .sub { font-size: 0; }  /* en celular solo se deja la etiqueta MVP */
+html.mobile .sub .badge { font-size: 11px; margin: 2px 0 0; }
+html.mobile .logo { font-size: 28px; }
+html.mobile .brand h1 { font-size: 17px; }
+html.mobile .mode-btn { order: 1; flex: none; min-height: 36px; padding: 4px 10px; font-size: 12px; }
+html.mobile .source { order: 2; }
+html.mobile #logoutBtn { min-height: 32px; padding: 4px 10px; margin-left: auto; }
+html.mobile .source { width: 100%; align-items: stretch; }
+html.mobile .user-box { flex-wrap: wrap; row-gap: 6px; }
+html.mobile .user-box #userEmail { flex: 1 1 100%; overflow: hidden; text-overflow: ellipsis; }
+html.mobile .source-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+html.mobile .source-actions .field { flex-direction: column; align-items: stretch; gap: 2px; }
+html.mobile .source-actions .btn { text-align: center; }
+html.mobile .source-actions a.btn, html.mobile #reloadBtn { display: none; }  /* opciones de escritorio */
+html.mobile select, html.mobile input[type=text], html.mobile input[type=email], html.mobile input[type=password] { font-size: 16px; min-height: 44px; }  /* 16 px evita el zoom automático en iPhone */
+html.mobile .btn { min-height: 44px; padding: 10px 14px; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+html.mobile .alerts { padding: 0 16px; }
+
+/* pestañas como barra inferior de app */
+html.mobile .tabs {
+  position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: 100%; max-width: 520px; z-index: 20;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); gap: 0; background: var(--card);
+  border-top: 1px solid var(--line); box-shadow: 0 -2px 10px rgba(0,0,0,.06); overflow: visible;
+}
+html.mobile .tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border-radius: 10px; border-bottom: 0; font-size: 12px; }
+html.mobile .tabs button b, html.mobile .tabs button .tl { display: none; }
+html.mobile .tabs button i { display: block; font-size: 20px; line-height: 1.2; }
+html.mobile .tabs button .ts { display: block; }
+html.mobile .tabs button.active { background: var(--pink); color: var(--red-dark); }
+html.mobile body.locked .tabs, html.mobile body.locked .source-actions { display: none; }
+
+html.mobile main { padding: 12px 12px 16px; }
+html.mobile .cards { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+html.mobile .card { padding: 10px 12px; }
+html.mobile .card .lbl { font-size: 11px; }
+html.mobile .card .val { font-size: 21px; }
+html.mobile .grid2 { grid-template-columns: 1fr; gap: 12px; margin-bottom: 12px; }
+html.mobile .win-bar { padding: 8px 12px; }
+html.mobile .win-bar i { display: none; }
+html.mobile .win-bar span { margin-left: 0; font-size: 13px; }
+html.mobile .win-body { padding: 12px; }
+html.mobile .table-wrap { margin: 0 -12px; padding: 0 12px; -webkit-overflow-scrolling: touch; }
+html.mobile .t th, html.mobile .t td { padding: 7px 8px; font-size: 13px; }
+html.mobile .bar-row { grid-template-columns: 78px 1fr 46px; gap: 8px; }
+
+/* briefing */
+html.mobile .mail-to input { flex-basis: 100%; }
+html.mobile .mail-to .btn { flex: 1 1 100%; }
+html.mobile .briefing { font-size: 15px; }
+html.mobile .briefing h3 { font-size: 18px; }
+html.mobile .row-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+html.mobile .row-actions input, html.mobile .row-actions .field { grid-column: 1 / -1; }
+html.mobile .row-actions .btn { white-space: normal; line-height: 1.2; }
+
+/* asistente: ocupa la pantalla y deja la caja de texto a mano */
+html.mobile .chat { border-radius: 0; margin: -12px -12px 0; border-left: 0; border-right: 0; }
+html.mobile .chat { overflow: visible; }
+html.mobile .chat-body { min-height: 0; height: 52vh; height: 52dvh; max-height: none; padding: 12px; }
+html.mobile .msg { max-width: 90%; }
+html.mobile .chips { flex-wrap: nowrap; overflow-x: auto; padding: 8px 12px 0; scrollbar-width: none; }
+html.mobile .chip { flex: none; padding: 8px 12px; font-size: 13px; }
+html.mobile .chat-input { padding: 10px 12px 12px; position: sticky; bottom: calc(66px + env(safe-area-inset-bottom)); background: var(--card); z-index: 5; }
+html.mobile .source-info { font-size: 12px; }
+html.mobile .chat-input input { font-size: 16px; }
+html.mobile .chat-input button { width: 44px; height: 44px; flex: none; }
+
+html.mobile .gate { padding: 24px 12px; }
+html.mobile .foot { padding: 0 16px 16px; }
