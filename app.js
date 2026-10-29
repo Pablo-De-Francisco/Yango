@@ -596,7 +596,7 @@ async function ask(q) {
     $('#chatInput').disabled = true;
     try {
       const r = await askAI('pregunta', q);
-      a = { text: r.texto + (r.truncada ? '\n(Respuesta recortada por longitud.)' : ''), src: `asistente IA · escenario ${r.escenario}, semana ${r.semana}` };
+      a = { text: r.texto + (r.truncada ? '\n(Respuesta recortada por longitud.)' : ''), src: `asistente IA (${r.modelo}) · escenario ${r.escenario}, semana ${r.semana}` };
       state.chatHist.push({ role: 'user', content: q }, { role: 'assistant', content: r.texto });
     } catch (e) {
       const rb = answer(q);
