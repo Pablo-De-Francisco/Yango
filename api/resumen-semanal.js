@@ -92,7 +92,8 @@ export default async function handler(req, res) {
 
     return res.status(fallidos.length && !enviados ? 502 : 200).json({
       enviados, total: destinatarios.length, semana: ctx.semana,
-      ...(fallidos.length ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). ${pista} (Detalle: ${detalle})` } : {}),
+      // para diagnosticar sin exponer secretos: usuario parcialmente oculto y solo el largo de la contraseña
+      ...(fallidos.length ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). ${pista} (Configuración que usa el servidor: SMTP_USER = ${smtpUser.replace(/^(.{3}).*(@.*)$/, '$1…$2')}; SMTP_PASS de ${process.env.SMTP_PASS.replace(/\s+/g, '').length} caracteres, debe ser 16. Detalle: ${detalle})` } : {}),
     });
   } catch (error) {
     return errorHttp(res, error);
