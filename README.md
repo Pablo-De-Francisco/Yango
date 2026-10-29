@@ -1,4 +1,4 @@
-# Copiloto de Marketing IA · Yango (prototipo borrador)
+# Copiloto de Marketing IA · Yango (MVP)
 
 Prototipo del MVP descrito en el informe integrado del curso *Innovación Tech III – Desarrollo de modelos de negocio con IA*.
 Autor: Pablo Esteban de Francisco.
@@ -6,7 +6,7 @@ Autor: Pablo Esteban de Francisco.
 El prototipo tiene tres piezas, alimentadas por una **base de datos Supabase** (o, si no está configurada, por los **Excel** de `data/`):
 
 1. **Hoja de KPIs y diccionario**: inversión, conversiones, ingresos, ROAS y CPA por canal, tendencia semanal, plan vs. real y definiciones únicas.
-2. **Briefing semanal IA**: borrador de correo para la Dirección de Marketing (resumen, qué explica el cambio, qué decidir), editable y con aprobación humana.
+2. **Briefing semanal IA**: correo para la Dirección de Marketing (resumen, qué explica el cambio, qué decidir), editable y con aprobación humana.
 3. **Asistente de preguntas**: responde solo con cifras de los datos y cita la fuente; si el dato no está, lo dice.
 
 Además, un **registro (log_ia)** de briefings aprobados y preguntas. Con Supabase el registro es **central** y cada consulta queda asociada a la **cuenta** que la hizo.
@@ -15,7 +15,7 @@ Con Supabase configurado, **para entrar hace falta una cuenta** (correo y contra
 
 Un selector de **escenario** permite comparar cuatro conjuntos de datos simulados: *Base*, *Muy favorable*, *Neutro* y *Desfavorable* (no son resultados reales).
 
-> Borrador: el "motor de IA" es un conjunto de reglas que corre en el navegador sobre los datos. No envía datos a ningún modelo de IA externo. En una siguiente versión se puede conectar a un LLM vía API con las mismas reglas del prompt.
+> El asistente y el resumen usan IA (Gemini o Claude, ver más abajo) y solo trabajan con las cifras del escenario elegido. Si la IA no está configurada o falla, responde un motor de reglas que corre en el navegador.
 
 ## Conectar Supabase (plan gratuito)
 

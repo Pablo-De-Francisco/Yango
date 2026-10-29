@@ -1,4 +1,4 @@
-/* Copiloto de Marketing IA · Yango — prototipo borrador.
+/* Copiloto de Marketing IA · Yango — MVP.
    Todo se calcula en el navegador a partir de Supabase (si está configurado en config.js)
    o del Excel del escenario elegido (data/*.xlsx), o del Excel que cargue el usuario. */
 'use strict';
@@ -510,7 +510,7 @@ function renderBriefing() {
   currentBrief = briefing(state.week);
   $('#mailSubject').textContent = `Briefing IA · semana ${state.week}`;
   $('#briefing').innerHTML = currentBrief.html;
-  $('#briefFoot').textContent = `Borrador generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
+  $('#briefFoot').textContent = `Resumen generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
   $('#aiBriefBtn').hidden = !aiAvailable();
   $('#sendNowBtn').hidden = !(aiAvailable() && state.isAdmin);
 }
