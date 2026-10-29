@@ -3,12 +3,10 @@
 // Genera el briefing de la última semana con Claude y lo envía a cada usuario con recibir_resumen = true.
 // Variables de entorno en Vercel: GEMINI_API_KEY (o ANTHROPIC_API_KEY), SUPABASE_SERVICE_ROLE_KEY (clave secreta), CRON_SECRET,
 // SMTP_USER y SMTP_PASS (p. ej. Gmail + contraseña de aplicación); opcionales SMTP_HOST, SMTP_PORT, RESUMEN_ESCENARIO, APP_URL.
-import nodemailer from 'nodemailer';
-import { bearer, usuario, sbJson, sbFetch, contexto, generar, errorHttp, textoAHtml, proveedorIA } from '../lib/copiloto.js';
+import { bearer, usuario, sbJson, sbFetch, contexto, generar, errorHttp, proveedorIA } from '../lib/copiloto.js';
+import { crearTransporte, correoHtml, explicarFallo } from '../lib/correo.js';
 
 export const config = { maxDuration: 60 };
-
-const APP_URL = process.env.APP_URL || 'https://yango-seven.vercel.app/';
 
 // Vercel Cron envía «Authorization: Bearer <CRON_SECRET>»; desde la app, solo una cuenta admin.
 async function autorizado(req) {
@@ -18,23 +16,6 @@ async function autorizado(req) {
   if (!user) return null;
   const perfil = await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []);
   return perfil[0]?.rol === 'admin' ? 'admin' : null;
-}
-
-function correoHtml(texto, ctx) {
-  return `<div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;color:#1d1d1f;font-size:15px;line-height:1.5">
-  <div style="background:#ff0000;color:#fff;padding:16px 20px;border-radius:8px 8px 0 0">
-    <div style="font-size:22px;font-weight:900;font-style:italic">YANGO</div>
-    <div style="font-size:14px">Briefing semanal IA · semana ${ctx.semana} · escenario ${ctx.nombre}</div>
-  </div>
-  <div style="border:1px solid #e4e4e7;border-top:0;padding:8px 20px 16px;border-radius:0 0 8px 8px">
-    ${textoAHtml(texto)}
-    <p style="margin-top:20px;padding:10px 14px;background:#fff6e0;color:#8a5a00;border-radius:8px;font-size:13px">
-      Resumen generado automáticamente con IA a partir de datos simulados del prototipo. Revísalo antes de tomar decisiones.
-    </p>
-    <p style="font-size:13px;color:#6b6b70">Abre el <a href="${APP_URL}" style="color:#ff0000">Copiloto de Marketing</a> para hacer preguntas sobre estos datos.
-    Para dejar de recibir este correo, desactiva «Resumen semanal por correo» en la app.</p>
-  </div>
-</div>`;
 }
 
 export default async function handler(req, res) {
@@ -54,31 +35,16 @@ export default async function handler(req, res) {
     // effort 'low' para que la generación termine con holgura dentro del límite de 60 s de la función
     const { texto, modelo } = await generar({ modo: 'resumen', ctx, effort: 'low' });
 
-    const smtpUser = process.env.SMTP_USER.trim();
-    const transporte = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: Number(process.env.SMTP_PORT || 465),
-      secure: Number(process.env.SMTP_PORT || 465) === 465,
-      // Google muestra la contraseña de aplicación con espacios («abcd efgh ijkl mnop»): se quitan
-      auth: { user: smtpUser, pass: process.env.SMTP_PASS.replace(/\s+/g, '') },
-      connectionTimeout: 10e3, greetingTimeout: 10e3,
-    });
+    const { transporte, from } = crearTransporte();
     const asunto = `Briefing IA · semana ${ctx.semana} · Marketing Yango`;
-    const html = correoHtml(texto, ctx);
+    const html = correoHtml(texto, `Briefing semanal IA · semana ${ctx.semana} · escenario ${ctx.nombre}`);
     // un correo por persona: nadie ve las direcciones de los demás
     const resultados = await Promise.allSettled(destinatarios.map(to => transporte.sendMail({
-      from: `"Copiloto de Marketing IA" <${smtpUser}>`, to, subject: asunto, text: texto, html,
+      from, to, subject: asunto, text: texto, html,
     })));
     const fallidos = destinatarios.filter((_, i) => resultados[i].status === 'rejected');
     const enviados = destinatarios.length - fallidos.length;
-    // motivo del primer fallo, tal como lo dio el servidor de correo (no incluye la contraseña)
     const motivo = fallidos.length ? resultados.find(r => r.status === 'rejected').reason : null;
-    const detalle = motivo ? [motivo.code, motivo.responseCode, motivo.response || motivo.message].filter(Boolean).join(' · ').slice(0, 220) : '';
-    const pista = !motivo ? '' : /EAUTH|535|534|Username and Password|BadCredentials/i.test(detalle)
-      ? 'Gmail rechazó el usuario o la contraseña: SMTP_PASS debe ser una contraseña de aplicación (16 letras), no la contraseña normal, y SMTP_USER el mismo Gmail donde la creaste.'
-      : /ETIMEDOUT|ECONNECTION|ESOCKET|ENOTFOUND/i.test(detalle)
-        ? 'No se pudo conectar con el servidor de correo.'
-        : 'Revisa SMTP_USER y SMTP_PASS.';
 
     await sbFetch('/rest/v1/log_ia', {
       ...servicio, method: 'POST', headers: { Prefer: 'return=minimal' },
@@ -92,8 +58,7 @@ export default async function handler(req, res) {
 
     return res.status(fallidos.length && !enviados ? 502 : 200).json({
       enviados, total: destinatarios.length, semana: ctx.semana,
-      // para diagnosticar sin exponer secretos: usuario parcialmente oculto y solo el largo de la contraseña
-      ...(fallidos.length ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). ${pista} (Configuración que usa el servidor: SMTP_USER = ${smtpUser.replace(/^(.{3}).*(@.*)$/, '$1…$2')}; SMTP_PASS de ${process.env.SMTP_PASS.replace(/\s+/g, '').length} caracteres, debe ser 16. Detalle: ${detalle})` } : {}),
+      ...(motivo ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). ${explicarFallo(motivo)}` } : {}),
     });
   } catch (error) {
     return errorHttp(res, error);

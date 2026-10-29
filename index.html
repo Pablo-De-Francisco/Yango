@@ -116,7 +116,10 @@
         <div class="win-bar"><i></i><i></i><i></i><span>Correo · Briefing IA</span></div>
         <div class="win-body">
           <div class="mail-head">
-            <div><b>Para:</b> Dirección de Marketing</div>
+            <div class="mail-to"><b>Para:</b>
+              <input id="mailTo" type="email" placeholder="escribe el correo de destino" aria-label="Correo de destino" autocomplete="email">
+              <button class="btn primary" id="sendMailBtn" type="button">Enviar a este correo</button>
+            </div>
             <div><b>Asunto:</b> <span id="mailSubject"></span></div>
           </div>
           <article id="briefing" class="briefing" contenteditable="true" spellcheck="false"></article>

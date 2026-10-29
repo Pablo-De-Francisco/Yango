@@ -740,6 +740,7 @@ async function onSignedIn(user) {
   $('#authGate').hidden = true;
   document.body.classList.remove('locked');
   $('#userEmail').textContent = user.email;
+  if (!$('#mailTo').value) $('#mailTo').value = user.email;
   $('#userRole').textContent = state.isAdmin ? 'Administrador' : 'Usuario';
   $('#userRole').className = 'role' + (state.isAdmin ? ' admin' : '');
   $('#userBox').hidden = false;
@@ -796,6 +797,48 @@ $('#sendNowBtn').addEventListener('click', async () => {
     $('#briefFoot').textContent = `No se pudo enviar el resumen: ${e.message}`;
   } finally {
     btn.disabled = false; btn.textContent = 'Enviar resumen semanal ahora';
+  }
+});
+
+// ---------- enviar el briefing a un correo ----------
+// El servidor lo envía (api/enviar-correo, Gmail del proyecto); si no puede, se abre Gmail con el correo ya escrito
+// para que la persona solo pulse «Enviar».
+function briefToText() {
+  const parts = [...$('#briefing').querySelectorAll('h1,h2,h3,h4,p,li')].map(el =>
+    /^H/.test(el.tagName) ? '\n## ' + el.innerText.trim() : el.tagName === 'LI' ? '- ' + el.innerText.trim() : el.innerText.trim());
+  return (parts.length ? parts.join('\n') : $('#briefing').innerText).trim();
+}
+function gmailLink(para, asunto, texto) {
+  const body = texto.length > 6000 ? texto.slice(0, 6000) + '\n…' : texto;  // las URL muy largas fallan
+  return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(para)}&su=${encodeURIComponent(asunto)}&body=${encodeURIComponent(body)}`;
+}
+$('#sendMailBtn').addEventListener('click', async () => {
+  const para = $('#mailTo').value.trim();
+  if (!$('#mailTo').checkValidity() || !para) { $('#mailTo').focus(); $('#briefFoot').textContent = 'Escribe un correo válido en «Para».'; return; }
+  const asunto = `${$('#mailSubject').textContent} · Marketing Yango`;
+  const texto = briefToText();
+  const respaldo = motivo => {
+    $('#briefFoot').innerHTML = `${esc(motivo)} <a href="${esc(gmailLink(para, asunto, texto))}" target="_blank" rel="noopener">Abrir en Gmail con el resumen listo para enviar</a>`;
+  };
+  if (!(SB && state.user)) return respaldo('Sin sesión el envío automático no está disponible.');
+  const btn = $('#sendMailBtn');
+  btn.disabled = true; btn.textContent = 'Enviando…';
+  try {
+    const session = (await SB.auth.getSession()).data.session;
+    const r = await fetch(CFG.enviarCorreo || 'api/enviar-correo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+      body: JSON.stringify({ para, asunto, texto, escenario: state.isUser ? null : state.scenario, semana: state.week }),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.error || `error ${r.status}`);
+    $('#briefFoot').textContent = `Listo: el resumen se envió a ${data.para}. Revisa la bandeja de entrada (y la carpeta de spam).`;
+    await loadLog().catch(() => {});
+  } catch (e) {
+    console.warn('envío por servidor falló:', e.message);
+    respaldo('El envío automático no está disponible por ahora.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Enviar a este correo';
   }
 });
 
