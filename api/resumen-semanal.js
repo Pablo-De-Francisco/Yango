@@ -54,20 +54,31 @@ export default async function handler(req, res) {
     // effort 'low' para que la generación termine con holgura dentro del límite de 60 s de la función
     const { texto, modelo } = await generar({ modo: 'resumen', ctx, effort: 'low' });
 
+    const smtpUser = process.env.SMTP_USER.trim();
     const transporte = nodemailer.createTransport({
       host: process.env.SMTP_HOST || 'smtp.gmail.com',
       port: Number(process.env.SMTP_PORT || 465),
       secure: Number(process.env.SMTP_PORT || 465) === 465,
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+      // Google muestra la contraseña de aplicación con espacios («abcd efgh ijkl mnop»): se quitan
+      auth: { user: smtpUser, pass: process.env.SMTP_PASS.replace(/\s+/g, '') },
+      connectionTimeout: 10e3, greetingTimeout: 10e3,
     });
     const asunto = `Briefing IA · semana ${ctx.semana} · Marketing Yango`;
     const html = correoHtml(texto, ctx);
     // un correo por persona: nadie ve las direcciones de los demás
     const resultados = await Promise.allSettled(destinatarios.map(to => transporte.sendMail({
-      from: `"Copiloto de Marketing IA" <${process.env.SMTP_USER}>`, to, subject: asunto, text: texto, html,
+      from: `"Copiloto de Marketing IA" <${smtpUser}>`, to, subject: asunto, text: texto, html,
     })));
     const fallidos = destinatarios.filter((_, i) => resultados[i].status === 'rejected');
     const enviados = destinatarios.length - fallidos.length;
+    // motivo del primer fallo, tal como lo dio el servidor de correo (no incluye la contraseña)
+    const motivo = fallidos.length ? resultados.find(r => r.status === 'rejected').reason : null;
+    const detalle = motivo ? [motivo.code, motivo.responseCode, motivo.response || motivo.message].filter(Boolean).join(' · ').slice(0, 220) : '';
+    const pista = !motivo ? '' : /EAUTH|535|534|Username and Password|BadCredentials/i.test(detalle)
+      ? 'Gmail rechazó el usuario o la contraseña: SMTP_PASS debe ser una contraseña de aplicación (16 letras), no la contraseña normal, y SMTP_USER el mismo Gmail donde la creaste.'
+      : /ETIMEDOUT|ECONNECTION|ESOCKET|ENOTFOUND/i.test(detalle)
+        ? 'No se pudo conectar con el servidor de correo.'
+        : 'Revisa SMTP_USER y SMTP_PASS.';
 
     await sbFetch('/rest/v1/log_ia', {
       ...servicio, method: 'POST', headers: { Prefer: 'return=minimal' },
@@ -81,7 +92,7 @@ export default async function handler(req, res) {
 
     return res.status(fallidos.length && !enviados ? 502 : 200).json({
       enviados, total: destinatarios.length, semana: ctx.semana,
-      ...(fallidos.length ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). Revisa SMTP_USER y SMTP_PASS.` } : {}),
+      ...(fallidos.length ? { error: `No se pudo enviar a ${fallidos.length} usuario(s). ${pista} (Detalle: ${detalle})` } : {}),
     });
   } catch (error) {
     return errorHttp(res, error);
