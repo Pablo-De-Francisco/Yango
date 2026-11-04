@@ -251,3 +251,28 @@ html.mobile .chat-input button { width: 44px; height: 44px; flex: none; }
 
 html.mobile .gate { padding: 24px 12px; }
 html.mobile .foot { padding: 0 16px 16px; }
+
+/* agente de datos */
+.agent-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); align-items: start; }
+.agent-grid .chat { max-width: none; }
+.agent-grid .chat-body { min-height: 420px; }
+.draft-head { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+.draft-head input { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: #fff; color: var(--ink); }
+.draft-head input[type=number] { width: 90px; }
+.t.draft td { padding: 4px; }
+.t.draft input { width: 100%; min-width: 84px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; background: #fff; color: var(--ink); font-variant-numeric: tabular-nums; }
+.t.draft input.n { text-align: right; }
+.t.draft .del { padding: 2px 8px; color: var(--muted); }
+#draftAddRow { margin-top: 8px; }
+.draft-checks { margin-top: 10px; font-size: 13px; }
+.draft-checks ul { margin: 0; padding-left: 18px; }
+.draft-checks li { margin: 3px 0; }
+.draft-checks .miss { color: var(--muted); }
+.draft-checks .warn { color: var(--amber); }
+.draft-checks p { margin: 6px 0 0; }
+html.mobile .tabs button { font-size: 11px; }
+html.mobile .agent-grid .chat { margin: -12px -12px 0; }
+html.mobile .agent-grid .chat-body { height: 46vh; height: 46dvh; min-height: 0; }
+html.mobile .draft-head .field { flex: 1 1 40%; }
+html.mobile .draft-head input { width: 100%; font-size: 16px; min-height: 44px; }
+html.mobile .t.draft input { font-size: 16px; }

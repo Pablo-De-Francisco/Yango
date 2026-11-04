@@ -637,6 +637,8 @@ function applyWorkbook(wb, source, kind, extraAlerts = []) {
     ? `Hola, soy el asistente IA de Marketing. Analizo los datos del escenario ${escName} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales) y respondo tus preguntas en lenguaje natural: tendencias, causas, comparaciones o recomendaciones. ¿Qué quieres saber?`
     : `Hola, soy el asistente de Marketing. Respondo solo con las cifras ${isUser ? 'de tu Excel' : `del escenario ${escName}`} (semanas ${state.weeks[0]}–${state.week}, ${state.channels.length} canales). ¿Qué quieres saber?`);
   renderAll();
+  // el agente de datos arranca con la semana siguiente a la última del escenario (si no hay un borrador en curso)
+  if (!isUser && state.agent && !state.agent.touched) agentReset();
   return true;
 }
 function setSource(text, cls) { $('#srcLabel').textContent = text; $('#srcDot').className = 'dot ' + (cls || ''); }
@@ -678,6 +680,196 @@ function exportWorkbook() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), logName);
   XLSX.writeFile(wb, 'kpis_marketing_con_log.xlsx');
 }
+
+// ---------- agente de datos (pestaña 5, función /api/agente-datos) ----------
+// La IA conversa y anota las cifras en el borrador; el servidor valida con reglas fijas; la persona revisa y confirma.
+const AGENT_URL = CFG.agenteDatos || 'api/agente-datos';
+const DRAFT_FIELDS = [['inversion', 'Inversión (USD)'], ['impresiones', 'Impresiones'], ['clics', 'Clics'], ['conversiones', 'Conversiones'], ['ingresos_atribuidos', 'Ingresos (USD)']];
+const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+state.agent = { hist: [], draft: null, check: null, touched: false, busy: false };
+
+async function callAgent(payload) {
+  const session = (await SB.auth.getSession()).data.session;
+  const r = await fetch(AGENT_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+    body: JSON.stringify({ escenario: state.scenario, ...payload }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(data.error || `error ${r.status}`), { data });
+  return data;
+}
+function agentMsg(who, text, src) {
+  const el = document.createElement('div');
+  el.className = `msg ${who}`;
+  el.textContent = text;
+  if (src) { const s = document.createElement('span'); s.className = 'src'; s.textContent = src; el.appendChild(s); }
+  $('#agentLog').appendChild(el);
+  $('#agentLog').scrollTop = $('#agentLog').scrollHeight;
+  return el;
+}
+// borrador inicial: la semana siguiente a la última cargada, con una fila vacía por canal
+function agentReset() {
+  const last = state.weeks.at(-1);
+  const start = state.starts.get(last);
+  const next = start ? new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7) : null;
+  state.agent = {
+    hist: [], check: null, touched: false, busy: false,
+    draft: { semana: last != null ? last + 1 : null, fecha_inicio: next ? isoDate(next) : null, filas: state.channels.map(canal => ({ canal })) },
+  };
+  $('#agentLog').innerHTML = '';
+  const ready = aiAvailable();
+  agentMsg('bot', ready
+    ? `Hola, soy el agente de datos. Vamos a cargar la semana ${state.agent.draft.semana ?? 'nueva'}${next ? ` (inicia el ${next.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })})` : ''} del escenario ${scenarioName(state.scenario)}. ` +
+      `Cuéntame las cifras de cada canal (${state.channels.join(', ')}): inversión, impresiones, clics, conversiones e ingresos. Puedes escribirlas como quieras, por ejemplo "Google Ads: invertimos 12 mil, 480 mil impresiones…". También puedes llenarlas directo en la tabla.`
+    : 'Para conversar con el agente inicia sesión (usa la IA del servidor). Mientras tanto puedes llenar la tabla a mano y descargar el Excel.');
+  $('#agentInput').disabled = !ready;
+  renderDraft();
+}
+function renderDraft() {
+  const { draft, check } = state.agent;
+  if (!draft) return;
+  $('#draftTitle').textContent = `Semana ${draft.semana ?? '—'} · escenario ${scenarioName(state.scenario)}`;
+  $('#draftWeek').value = draft.semana ?? '';
+  $('#draftDate').value = draft.fecha_inicio || '';
+  $('#draftTable').innerHTML = `<thead><tr><th>Canal</th>${DRAFT_FIELDS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th></th></tr></thead><tbody>` +
+    (draft.filas.length ? draft.filas.map((f, i) => `<tr><td><input data-i="${i}" data-k="canal" value="${esc(f.canal)}" aria-label="Canal"></td>` +
+      DRAFT_FIELDS.map(([k, l]) => `<td><input class="n" data-i="${i}" data-k="${k}" type="number" min="0" step="any" inputmode="decimal" value="${f[k] ?? ''}" aria-label="${esc(l)} de ${esc(f.canal)}"></td>`).join('') +
+      `<td><button class="btn ghost del" type="button" data-del="${i}" aria-label="Quitar ${esc(f.canal)}">×</button></td></tr>`).join('')
+      : `<tr><td colspan="${DRAFT_FIELDS.length + 2}">Sin canales. Usa «+ Agregar canal».</td></tr>`) + '</tbody>';
+  renderDraftChecks();
+}
+// solo avisos y botones: no se vuelve a pintar la tabla para no sacar a la persona de la celda que edita
+function renderDraftChecks() {
+  const { check } = state.agent;
+  $('#draftTitle').textContent = `Semana ${state.agent.draft.semana ?? '—'} · escenario ${scenarioName(state.scenario)}`;
+  const li = (cls, items) => items.map(x => `<li class="${cls}">${esc(x)}</li>`).join('');
+  $('#draftChecks').innerHTML = !check ? '' : check.completo && !check.avisos.length
+    ? '<p class="good">Borrador completo y sin problemas. Revísalo y guárdalo.</p>'
+    : `<ul>${check.faltan.length ? `<li class="miss">Falta: ${esc(check.faltan.slice(0, 6).join(', '))}${check.faltan.length > 6 ? ` y ${check.faltan.length - 6} más` : ''}.</li>` : ''}${li('bad', check.errores)}${li('warn', check.avisos)}</ul>` +
+      (check.completo ? '<p class="good">Listo para guardar (revisa los avisos).</p>' : '');
+  $('#draftSave').hidden = !(state.isAdmin && SB && state.user && !state.isUser);
+  $('#draftSave').disabled = !(check && check.completo) || state.agent.busy;
+}
+let draftTimer = null;
+function draftChanged() {
+  state.agent.touched = true;
+  clearTimeout(draftTimer);
+  renderDraftChecks();
+  if (!(SB && state.user)) return;
+  draftTimer = setTimeout(async () => {
+    try { const v = await callAgent({ accion: 'validar', borrador: state.agent.draft }); state.agent.check = v; }
+    catch { /* sin validación del servidor: se valida al conversar o al guardar */ }
+    renderDraftChecks();
+  }, 600);
+}
+async function sendAgent(text) {
+  if (!text.trim() || state.agent.busy || !aiAvailable()) return;
+  agentMsg('user', text);
+  const pending = agentMsg('bot', 'Anotando los datos…');
+  pending.classList.add('pending');
+  state.agent.busy = true; $('#agentInput').disabled = true;
+  try {
+    const r = await callAgent({ accion: 'conversar', mensaje: text, historial: state.agent.hist, borrador: state.agent.draft });
+    state.agent.hist.push({ role: 'user', content: text }, { role: 'assistant', content: r.mensaje });
+    state.agent.draft = r.borrador;
+    state.agent.check = r;
+    state.agent.touched = true;
+    agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`);
+  } catch (e) {
+    agentMsg('bot', `No pude procesar el mensaje: ${e.message}. Puedes intentarlo de nuevo o llenar la tabla a mano.`);
+  } finally {
+    pending.remove();
+    state.agent.busy = false; $('#agentInput').disabled = false; $('#agentInput').focus();
+    renderDraft();
+  }
+}
+// libro actual + filas del borrador en «datos_crudos» (reemplaza la misma semana y canal si ya existían)
+function draftWorkbook() {
+  const { draft } = state.agent;
+  const filas = draft.filas.filter(f => String(f.canal || '').trim() && DRAFT_FIELDS.every(([k]) => Number.isFinite(+f[k]) && f[k] !== '' && f[k] != null));
+  if (!state.wb || draft.semana == null || !filas.length) return null;
+  const wsName = state.wb.SheetNames.find(n => norm(n) === 'datos crudos') || 'datos_crudos';
+  const rows = state.wb.Sheets[wsName] ? sheetRows(state.wb.Sheets[wsName]) : [];
+  const header = rows.length ? Object.keys(rows[0]) : ['Semana', 'Fecha inicio', 'Canal', 'Inversión (USD)', 'Impresiones', 'Clics', 'Conversiones', 'Ingresos atribuidos (USD)'];
+  const col = mapColumns([Object.fromEntries(header.map(h => [h, '']))], {
+    semana: ['semana'], inicio: ['fecha inicio', 'fecha'], canal: ['canal'], inversion: ['inversion', 'gasto'], impresiones: ['impresiones'],
+    clics: ['clics', 'clicks'], conversiones: ['conversiones'], ingresos_atribuidos: ['ingresos atribuidos', 'ingresos'],
+  });
+  const same = r => toNum(r[col.semana]) === +draft.semana && filas.some(f => norm(f.canal) === norm(r[col.canal]));
+  const nuevas = filas.map(f => {
+    const r = Object.fromEntries(header.map(h => [h, '']));
+    r[col.semana] = +draft.semana; if (col.inicio) r[col.inicio] = draft.fecha_inicio || ''; r[col.canal] = String(f.canal).trim();
+    for (const [k] of DRAFT_FIELDS) if (col[k]) r[col[k]] = +f[k];
+    return r;
+  });
+  const wb = XLSX.utils.book_new();
+  for (const n of state.wb.SheetNames) {
+    XLSX.utils.book_append_sheet(wb, n === wsName ? XLSX.utils.json_to_sheet([...rows.filter(r => !same(r)), ...nuevas], { header }) : state.wb.Sheets[n], n);
+  }
+  if (!state.wb.Sheets[wsName]) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(nuevas, { header }), wsName);
+  return wb;
+}
+
+$('#agentForm').addEventListener('submit', e => { e.preventDefault(); const q = $('#agentInput').value; $('#agentInput').value = ''; sendAgent(q); });
+$('#draftWeek').addEventListener('change', e => { state.agent.draft.semana = e.target.value === '' ? null : +e.target.value; draftChanged(); });
+$('#draftDate').addEventListener('change', e => { state.agent.draft.fecha_inicio = e.target.value || null; draftChanged(); });
+$('#draftTable').addEventListener('change', e => {
+  const { i, k } = e.target.dataset;
+  if (i == null) return;
+  state.agent.draft.filas[+i][k] = k === 'canal' ? e.target.value.trim() : (e.target.value === '' ? null : +e.target.value);
+  draftChanged();
+});
+$('#draftTable').addEventListener('click', e => {
+  const del = e.target.closest('[data-del]');
+  if (!del) return;
+  state.agent.draft.filas.splice(+del.dataset.del, 1);
+  draftChanged(); renderDraft();
+});
+$('#draftAddRow').addEventListener('click', () => {
+  const canal = prompt('Nombre del canal nuevo:');
+  if (!canal || !canal.trim()) return;
+  state.agent.draft.filas.push({ canal: canal.trim().slice(0, 60) });
+  draftChanged(); renderDraft();
+});
+$('#draftReset').addEventListener('click', () => { if (!state.agent.touched || confirm('¿Borrar el borrador y empezar de nuevo?')) agentReset(); });
+$('#draftExcel').addEventListener('click', () => {
+  const wb = draftWorkbook();
+  if (!wb) { $('#draftNote').textContent = 'Para descargar el Excel hace falta la semana y todas las cifras de al menos un canal.'; return; }
+  XLSX.writeFile(wb, `kpis_marketing_${state.scenario}_semana_${state.agent.draft.semana}.xlsx`);
+  $('#draftNote').textContent = 'Excel descargado con la semana nueva en la pestaña «datos_crudos». Puedes subirlo a data/ en GitHub o cargarlo con «Cargar mi Excel».';
+});
+$('#draftPreview').addEventListener('click', () => {
+  const wb = draftWorkbook();
+  if (!wb) { $('#draftNote').textContent = 'Para verlo en el tablero hace falta la semana y todas las cifras de al menos un canal.'; return; }
+  const draft = state.agent.draft;
+  if (applyWorkbook(wb, `datos del agente (semana ${draft.semana})`, 'user')) {
+    state.agent.draft = draft;  // applyWorkbook no toca el borrador, pero se deja explícito
+    document.querySelector('.tabs button[data-tab="kpis"]').click();
+  }
+});
+$('#draftSave').addEventListener('click', async () => {
+  const { draft } = state.agent;
+  if (!confirm(`Se guardará la semana ${draft.semana} (${draft.filas.length} canal(es)) en la base de datos del escenario ${scenarioName(state.scenario)}. Todos los usuarios verán estas cifras. ¿Continuar?`)) return;
+  state.agent.busy = true; renderDraft();
+  $('#draftSave').textContent = 'Guardando…';
+  try {
+    const r = await callAgent({ accion: 'guardar', borrador: draft });
+    agentMsg('bot', `Listo: guardé la semana ${r.semana} (${r.filas} canal(es)) en la base de datos del escenario ${r.escenario}. Ya aparece en la Hoja de KPIs.`);
+    state.agent.busy = false;
+    await loadDefault();
+    await loadLog().catch(() => {});
+    state.agent.touched = false;
+    agentReset();
+  } catch (e) {
+    if (e.data && e.data.faltan) state.agent.check = e.data;
+    agentMsg('bot', `No se pudo guardar: ${e.message}`);
+  } finally {
+    state.agent.busy = false;
+    $('#draftSave').textContent = 'Guardar en la base de datos';
+    renderDraft();
+  }
+});
 
 // ---------- eventos ----------
 document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
