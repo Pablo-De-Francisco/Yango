@@ -276,3 +276,21 @@ html.mobile .agent-grid .chat-body { height: 46vh; height: 46dvh; min-height: 0;
 html.mobile .draft-head .field { flex: 1 1 40%; }
 html.mobile .draft-head input { width: 100%; font-size: 16px; min-height: 44px; }
 html.mobile .t.draft input { font-size: 16px; }
+
+/* solicitudes de carga de datos */
+#reqWin { margin-top: 16px; }
+.req { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+.req.pendiente { border-left: 4px solid #e09b00; }
+.req.aprobada { border-left: 4px solid var(--green); }
+.req.rechazada { border-left: 4px solid var(--red); }
+.req-head { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.req-head b { color: var(--ink); }
+.req-state { margin-left: auto; padding: 1px 8px; border-radius: 99px; background: #f1f1f2; font-weight: 600; font-size: 12px; }
+.req.pendiente .req-state { background: var(--amber-bg); color: var(--amber); }
+.req.aprobada .req-state { background: var(--green-bg); color: var(--green); }
+.req.rechazada .req-state { background: #fde8e8; color: #9b1111; }
+.req-note { font-size: 13px; margin-top: 4px; }
+.req .table-wrap { margin-top: 8px; }
+.tabs button .count { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 99px; background: var(--red); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+html.mobile .tabs button { position: relative; }
+html.mobile .tabs button .count { position: absolute; top: 2px; right: 50%; margin-right: -22px; }

@@ -748,9 +748,100 @@ function renderDraftChecks() {
     ? '<p class="good">Borrador completo y sin problemas. Revísalo y guárdalo.</p>'
     : `<ul>${check.faltan.length ? `<li class="miss">Falta: ${esc(check.faltan.slice(0, 6).join(', '))}${check.faltan.length > 6 ? ` y ${check.faltan.length - 6} más` : ''}.</li>` : ''}${li('bad', check.errores)}${li('warn', check.avisos)}</ul>` +
       (check.completo ? '<p class="good">Listo para guardar (revisa los avisos).</p>' : '');
-  $('#draftSave').hidden = !(state.isAdmin && SB && state.user && !state.isUser);
-  $('#draftSave').disabled = !(check && check.completo) || state.agent.busy;
+  const conCuenta = !!(SB && state.user && !state.isUser);
+  $('#draftSave').hidden = !(conCuenta && state.isAdmin);
+  $('#draftRequest').hidden = !(conCuenta && !state.isAdmin);  // los usuarios piden permiso; el admin guarda directo
+  $('#draftSave').disabled = $('#draftRequest').disabled = !(check && check.completo) || state.agent.busy;
 }
+
+// ---------- solicitudes de carga (usuario → administrador) ----------
+const REQ_STATE = { pendiente: 'Pendiente', aprobada: 'Aprobada', rechazada: 'Rechazada' };
+state.requests = [];
+async function loadRequests() {
+  if (!(SB && state.user)) { $('#reqWin').hidden = true; return; }
+  try {
+    const r = await callAgent({ accion: 'solicitudes' });
+    state.requests = r.solicitudes || [];
+    $('#reqNote').textContent = r.admin
+      ? 'Al aprobar, la semana se valida otra vez y se guarda en la base de datos para todos. Quien la pidió recibe un aviso por correo (si el correo está configurado).'
+      : 'Aquí ves el estado de tus solicitudes. El administrador recibe un aviso y decide si se guardan en la base de datos.';
+  } catch (e) {
+    state.requests = [];
+    $('#reqNote').textContent = `No pude leer las solicitudes: ${e.message}`;
+  }
+  renderRequests();
+}
+function renderRequests() {
+  const admin = state.isAdmin;
+  const list = state.requests;
+  const pend = list.filter(s => s.estado === 'pendiente');
+  $('#reqWin').hidden = !(SB && state.user);
+  $('#reqTitle').textContent = admin ? `Solicitudes de los usuarios · ${pend.length} pendiente(s)` : 'Mis solicitudes al administrador';
+  $('#reqCount').hidden = !(admin && pend.length);
+  $('#reqCount').textContent = pend.length;
+  const table = s => `<div class="table-wrap"><table class="t small"><thead><tr><th>Canal</th>${DRAFT_FIELDS.map(([, l]) => `<th class="n">${l}</th>`).join('')}</tr></thead><tbody>` +
+    (s.filas || []).map(f => `<tr><td>${esc(f.canal)}</td>${DRAFT_FIELDS.map(([k]) => `<td class="n">${esc(Number(f[k]).toLocaleString('es-CO'))}</td>`).join('')}</tr>`).join('') + '</tbody></table></div>';
+  // el admin ve primero las pendientes completas; el resto (y lo del usuario) en una lista corta
+  $('#reqList').innerHTML = !list.length ? `<p class="note">${admin ? 'No hay solicitudes por ahora.' : 'Aún no has enviado solicitudes. Completa el borrador y pulsa «Enviar al administrador para aprobar».'}</p>` :
+    list.map(s => {
+      const open = admin && s.estado === 'pendiente';
+      return `<div class="req ${s.estado}">
+        <div class="req-head"><b>Semana ${esc(s.semana)}</b> · ${esc(scenarioName(s.escenario))} · ${esc(new Date(s.created_at).toLocaleString('es-CO'))}${admin ? ` · ${esc(s.email || '')}` : ''}
+          <span class="req-state">${REQ_STATE[s.estado] || esc(s.estado)}</span></div>
+        ${s.nota ? `<div class="req-note">Nota: ${esc(s.nota)}</div>` : ''}
+        ${s.comentario ? `<div class="req-note">Comentario del administrador: ${esc(s.comentario)}</div>` : ''}
+        ${open || !admin ? table(s) : ''}
+        ${open ? `<div class="row-actions"><button class="btn primary" type="button" data-approve="${s.id}">Aprobar y guardar</button><button class="btn" type="button" data-reject="${s.id}">Rechazar</button><button class="btn ghost" type="button" data-load="${s.id}">Abrir en el borrador</button></div>` : ''}
+      </div>`;
+    }).join('');
+}
+$('#draftRequest').addEventListener('click', async () => {
+  const { draft } = state.agent;
+  const nota = prompt(`Se enviará la semana ${draft.semana} (${draft.filas.length} canal(es)) al administrador para que la apruebe.\nNota opcional para el administrador (de dónde salen los datos, etc.):`, '');
+  if (nota === null) return;
+  state.agent.busy = true; renderDraftChecks();
+  try {
+    const r = await callAgent({ accion: 'solicitar', borrador: draft, nota });
+    agentMsg('bot', `Listo: envié tu solicitud para agregar la semana ${r.semana} al escenario ${r.escenario}. El administrador la revisará; verás su estado abajo, en «Mis solicitudes».`);
+    state.agent.touched = false;
+    await loadRequests();
+  } catch (e) {
+    if (e.data && e.data.faltan) state.agent.check = e.data;
+    agentMsg('bot', `No se pudo enviar la solicitud: ${e.message}`);
+  } finally {
+    state.agent.busy = false; renderDraftChecks();
+  }
+});
+$('#reqList').addEventListener('click', async e => {
+  const b = e.target.closest('[data-approve],[data-reject],[data-load]');
+  if (!b) return;
+  const id = +(b.dataset.approve || b.dataset.reject || b.dataset.load);
+  const s = state.requests.find(x => x.id === id);
+  if (!s) return;
+  if (b.dataset.load) {
+    // el admin puede corregir las cifras y guardarlas él mismo (la solicitud queda pendiente hasta resolverla)
+    if (s.escenario !== state.scenario) { $('#escSel').value = s.escenario; state.scenario = s.escenario; await loadDefault(); }
+    state.agent.draft = { semana: s.semana, fecha_inicio: s.fecha_inicio, filas: s.filas.map(f => ({ ...f })) };
+    state.agent.touched = true; state.agent.check = null;
+    renderDraft(); draftChanged();
+    $('#draftTitle').scrollIntoView({ block: 'start', behavior: 'smooth' });
+    return;
+  }
+  const aprobar = !!b.dataset.approve;
+  const comentario = prompt(aprobar
+    ? `Aprobar la semana ${s.semana} de ${s.email}: se guardará en la base de datos del escenario ${scenarioName(s.escenario)}.\nComentario opcional:`
+    : `Rechazar la solicitud de ${s.email} (semana ${s.semana}).\nMotivo (lo verá el usuario):`, '');
+  if (comentario === null) return;
+  b.disabled = true;
+  try {
+    const r = await callAgent({ accion: aprobar ? 'aprobar' : 'rechazar', id, comentario });
+    renderAlerts([['ok', aprobar ? `Solicitud aprobada: la semana ${esc(r.semana)} quedó guardada en la base de datos.` : 'Solicitud rechazada.']]);
+    if (aprobar && s.escenario === state.scenario) { await loadDefault(); await loadLog().catch(() => {}); }
+  } catch (err) {
+    renderAlerts([['err', `No se pudo ${aprobar ? 'aprobar' : 'rechazar'} la solicitud: ${esc(err.message)}`]]);
+  }
+  await loadRequests();
+});
 let draftTimer = null;
 function draftChanged() {
   state.agent.touched = true;
@@ -879,6 +970,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
     // en el asistente se baja hasta la caja de texto; en las demás pestañas, al inicio
     if (b.dataset.tab === 'chat') $('#chatForm').scrollIntoView({ block: 'end' }); else window.scrollTo(0, 0);
   }
+  if (b.dataset.tab === 'agente') loadRequests();
 }));
 // ---------- modo celular / escritorio (el modo inicial lo pone el script del <head> de index.html) ----------
 function renderModeBtn() {
@@ -957,6 +1049,7 @@ async function onSignedIn(user) {
   $('#userRole').className = 'role' + (state.isAdmin ? ' admin' : '');
   $('#userBox').hidden = false;
   await startApp();
+  loadRequests();  // solicitudes de carga de datos (el admin ve cuántas hay pendientes en la pestaña 5)
 }
 const AUTH_ERRORS = [
   [/invalid login credentials/i, 'Correo o contraseña incorrectos.'],

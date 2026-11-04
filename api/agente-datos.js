@@ -1,9 +1,11 @@
 // Agente de datos (función de servidor de Vercel: POST /api/agente-datos).
 // accion 'conversar': la IA pide al usuario los datos de una semana nueva (fecha y cifras por canal) y arma un borrador.
 // accion 'guardar': un administrador guarda el borrador revisado en la tabla datos_crudos de Supabase.
+// accion 'solicitar': un usuario envía su borrador al administrador; 'solicitudes' las lista; 'aprobar' / 'rechazar' (admin) las resuelve.
 // El servidor valida siempre el borrador con reglas fijas: la IA conversa, pero no decide qué datos son válidos.
 // Variables de entorno en Vercel: GEMINI_API_KEY (o ANTHROPIC_API_KEY) y, para guardar, SUPABASE_SERVICE_ROLE_KEY.
 import { bearer, usuario, sbJson, sbFetch, generarJSON, errorHttp, proveedorIA } from '../lib/copiloto.js';
+import { correoConfigurado, crearTransporte, correoHtml } from '../lib/correo.js';
 
 export const config = { maxDuration: 60 };
 
@@ -108,6 +110,38 @@ async function referencia(escenario, auth) {
   };
 }
 
+const SERVICIO = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, token: process.env.SUPABASE_SERVICE_ROLE_KEY } : null;
+const resumenProblemas = v => [...v.faltan.map(x => 'falta ' + x), ...v.errores].join('; ').replace(/\.$/, '');
+
+// Escribe la semana en datos_crudos (si la semana y el canal ya existen, se actualizan) y lo deja en el registro.
+async function guardarSemana(ref, borrador, token, email, origen) {
+  const filas = borrador.filas.map(f => ({ escenario: ref.id, semana: borrador.semana, fecha_inicio: borrador.fecha_inicio, canal: f.canal, ...Object.fromEntries(CAMPOS.map(k => [k, f[k]])) }));
+  await sbFetch('/rest/v1/datos_crudos?on_conflict=escenario,semana,canal', {
+    ...SERVICIO, method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: filas,
+  });
+  await sbFetch('/rest/v1/log_ia', {
+    token, method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: {
+      tipo: 'pregunta', escenario: ref.id, semana: borrador.semana,
+      pregunta: `Agente de datos · semana ${borrador.semana} guardada en datos_crudos`,
+      respuesta: filas.map(f => `${f.canal}: inversión ${f.inversion}, impresiones ${f.impresiones}, clics ${f.clics}, conversiones ${f.conversiones}, ingresos ${f.ingresos_atribuidos}`).join('\n').slice(0, 5000),
+      fuente: `agente de datos · ${origen}`.slice(0, 300), revisado_por: String(email || '').slice(0, 120),
+    },
+  }).catch(() => { /* el registro no debe impedir informar el guardado */ });
+  return { guardado: true, filas: filas.length, semana: borrador.semana, escenario: ref.nombre };
+}
+
+// Aviso por correo (si el correo está configurado); un fallo no detiene la solicitud.
+async function avisar(destinos, asunto, texto) {
+  const para = destinos.filter(Boolean);
+  if (!para.length || !correoConfigurado()) return;
+  try {
+    const { transporte, from } = crearTransporte();
+    await Promise.allSettled(para.map(to => transporte.sendMail({ from, to, subject: asunto, text: texto, html: correoHtml(texto, asunto, '') })));
+  } catch { /* sin aviso por correo */ }
+}
+
 function historial(h) {
   const msgs = (Array.isArray(h) ? h : []).slice(-16)
     .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
@@ -125,30 +159,62 @@ export default async function handler(req, res) {
   const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
   const escenario = String(body.escenario || 'base').slice(0, 40);
   try {
+    const accion = body.accion;
+    const esAdmin = async () => (await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []))[0]?.rol === 'admin';
+    const necesitaServicio = ['guardar', 'solicitar', 'solicitudes', 'aprobar', 'rechazar'].includes(accion);
+    if (necesitaServicio && !SERVICIO) return res.status(503).json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+
+    // ---- solicitudes: los usuarios piden; el administrador aprueba (se guarda) o rechaza ----
+    if (accion === 'solicitudes') {
+      const admin = await esAdmin();
+      const filtro = admin ? '' : `&user_id=eq.${user.id}`;
+      const lista = await sbJson(`solicitudes_datos?select=*&order=created_at.desc&limit=50${filtro}`, SERVICIO);
+      return res.status(200).json({ admin, solicitudes: lista });
+    }
+    if (accion === 'aprobar' || accion === 'rechazar') {
+      if (!(await esAdmin())) return res.status(403).json({ error: 'Solo un administrador puede revisar solicitudes.' });
+      const id = Number(body.id);
+      const [sol] = await sbJson(`solicitudes_datos?select=*&id=eq.${id}`, SERVICIO);
+      if (!sol) return res.status(404).json({ error: 'No encuentro esa solicitud.' });
+      if (sol.estado !== 'pendiente') return res.status(409).json({ error: `Esa solicitud ya fue ${sol.estado}.` });
+      const comentario = String(body.comentario || '').trim().slice(0, 500) || null;
+      let resultado = {};
+      if (accion === 'aprobar') {
+        // se valida otra vez contra los datos de hoy (pudieron cambiar desde que se pidió)
+        const ref = await referencia(sol.escenario, SERVICIO);
+        const v = validar(unir({}, { semana: sol.semana, fecha_inicio: sol.fecha_inicio, filas: sol.filas }), ref);
+        if (!v.completo) return res.status(400).json({ error: `La solicitud ya no pasa la validación: ${resumenProblemas(v)}.` });
+        resultado = await guardarSemana(ref, v.borrador, token, user.email, `solicitud #${id} de ${sol.email}`);
+      }
+      await sbFetch(`/rest/v1/solicitudes_datos?id=eq.${id}&estado=eq.pendiente`, {
+        ...SERVICIO, method: 'PATCH', headers: { Prefer: 'return=minimal' },
+        body: { estado: accion === 'aprobar' ? 'aprobada' : 'rechazada', revisado_por: user.email, revisado_at: new Date().toISOString(), comentario },
+      });
+      await avisar([sol.email], `Tu solicitud de datos fue ${accion === 'aprobar' ? 'aprobada' : 'rechazada'} · semana ${sol.semana}`,
+        `El administrador ${accion === 'aprobar' ? 'aprobó y guardó' : 'rechazó'} tu solicitud para agregar la semana ${sol.semana} (escenario ${sol.escenario}).${comentario ? `\n\nComentario: ${comentario}` : ''}`);
+      return res.status(200).json({ ok: true, estado: accion === 'aprobar' ? 'aprobada' : 'rechazada', ...resultado });
+    }
+
     const ref = await referencia(escenario, { token });
 
-    if (body.accion === 'guardar') {
-      const perfil = await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []);
-      if (perfil[0]?.rol !== 'admin') return res.status(403).json({ error: 'Solo un administrador puede guardar datos en la base. Puedes descargar el Excel con tus datos.' });
-      if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(503).json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+    if (accion === 'guardar' || accion === 'solicitar') {
+      const admin = await esAdmin();
+      if (accion === 'guardar' && !admin) return res.status(403).json({ error: 'Solo un administrador puede guardar datos en la base. Envía tu borrador como solicitud.' });
       const v = validar(unir({}, body.borrador || {}), ref);
-      if (!v.completo) return res.status(400).json({ error: `El borrador no está listo: ${[...v.faltan.map(x => 'falta ' + x), ...v.errores].join('; ').replace(/\.$/, '')}.`, ...v });
-      const filas = v.borrador.filas.map(f => ({ escenario: ref.id, semana: v.borrador.semana, fecha_inicio: v.borrador.fecha_inicio, canal: f.canal, ...Object.fromEntries(CAMPOS.map(k => [k, f[k]])) }));
-      const servicio = { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, token: process.env.SUPABASE_SERVICE_ROLE_KEY };
-      // si la semana y el canal ya existen, se actualizan (clave única escenario + semana + canal)
-      await sbFetch('/rest/v1/datos_crudos?on_conflict=escenario,semana,canal', {
-        ...servicio, method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: filas,
-      });
-      await sbFetch('/rest/v1/log_ia', {
-        token, method: 'POST', headers: { Prefer: 'return=minimal' },
-        body: {
-          tipo: 'pregunta', escenario: ref.id, semana: v.borrador.semana,
-          pregunta: `Agente de datos · semana ${v.borrador.semana} guardada en datos_crudos`,
-          respuesta: filas.map(f => `${f.canal}: inversión ${f.inversion}, impresiones ${f.impresiones}, clics ${f.clics}, conversiones ${f.conversiones}, ingresos ${f.ingresos_atribuidos}`).join('\n').slice(0, 5000),
-          fuente: 'agente de datos · guardado por el administrador', revisado_por: String(user.email || '').slice(0, 120),
-        },
-      }).catch(() => { /* el registro no debe impedir informar el guardado */ });
-      return res.status(200).json({ guardado: true, filas: filas.length, semana: v.borrador.semana, escenario: ref.nombre });
+      if (!v.completo) return res.status(400).json({ error: `El borrador no está listo: ${resumenProblemas(v)}.`, ...v });
+      if (accion === 'guardar') return res.status(200).json(await guardarSemana(ref, v.borrador, token, user.email, 'guardado directo del administrador'));
+
+      const pendientes = await sbJson(`solicitudes_datos?select=id&user_id=eq.${user.id}&estado=eq.pendiente`, SERVICIO);
+      if (pendientes.length >= 5) return res.status(429).json({ error: 'Ya tienes 5 solicitudes pendientes. Espera a que el administrador las revise.' });
+      const nota = String(body.nota || '').trim().slice(0, 500) || null;
+      const [sol] = await (await sbFetch('/rest/v1/solicitudes_datos', {
+        ...SERVICIO, method: 'POST', headers: { Prefer: 'return=representation' },
+        body: { user_id: user.id, email: user.email, escenario: ref.id, semana: v.borrador.semana, fecha_inicio: v.borrador.fecha_inicio, filas: v.borrador.filas, nota },
+      })).json();
+      const admins = (await sbJson('perfiles?select=email&rol=eq.admin&email=not.is.null', SERVICIO).catch(() => [])).map(p => p.email);
+      await avisar(admins, `Nueva solicitud de datos · semana ${v.borrador.semana} · ${ref.nombre}`,
+        `${user.email} pide agregar la semana ${v.borrador.semana} (${v.borrador.filas.length} canal(es)) al escenario ${ref.nombre}.${nota ? `\n\nNota: ${nota}` : ''}\n\nRevísala en la pestaña «Agente de datos» del Copiloto.`);
+      return res.status(200).json({ solicitada: true, id: sol?.id, semana: v.borrador.semana, escenario: ref.nombre, avisos: v.avisos });
     }
 
     // validar: revisa el borrador editado a mano en la tabla, sin llamar a la IA
@@ -173,6 +239,9 @@ export default async function handler(req, res) {
     const mensaje = String(datos.mensaje || '').trim() || (v.completo ? 'El borrador está completo. Revísalo en la tabla.' : `Me falta: ${v.faltan.join(', ')}.`);
     return res.status(200).json({ mensaje, modelo, escenario: ref.nombre, ...v });
   } catch (error) {
+    if (/solicitudes_datos/.test(error.message) && /PGRST205|does not exist|Could not find/i.test(error.message)) {
+      return res.status(503).json({ error: 'Falta crear la tabla de solicitudes en Supabase: ejecuta el archivo supabase/solicitudes.sql en el SQL Editor.' });
+    }
     return errorHttp(res, error);
   }
 }

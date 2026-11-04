@@ -138,3 +138,23 @@ create policy "editar preferencias propias" on public.perfiles for update to aut
   using (id = (select auth.uid())) with check (id = (select auth.uid()));
 revoke update on public.perfiles from anon, authenticated;
 grant update (recibir_resumen) on public.perfiles to authenticated;
+
+-- Solicitudes de carga de datos (también en supabase/solicitudes.sql)
+create table if not exists public.solicitudes_datos (
+  id           bigint generated always as identity primary key,
+  created_at   timestamptz not null default now(),
+  user_id      uuid references auth.users (id) on delete set null,
+  email        text,
+  escenario    text not null references public.escenarios (id) on update cascade,
+  semana       integer not null,
+  fecha_inicio date,
+  filas        jsonb not null,
+  nota         text check (char_length(nota) <= 500),
+  estado       text not null default 'pendiente' check (estado in ('pendiente', 'aprobada', 'rechazada')),
+  revisado_por text,
+  revisado_at  timestamptz,
+  comentario   text check (char_length(comentario) <= 500)
+);
+create index if not exists solicitudes_estado_idx on public.solicitudes_datos (estado, created_at desc);
+alter table public.solicitudes_datos enable row level security;
+notify pgrst, 'reload schema';
