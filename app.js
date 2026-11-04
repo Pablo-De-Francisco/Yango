@@ -691,7 +691,7 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
 // ---------- modo celular / escritorio (el modo inicial lo pone el script del <head> de index.html) ----------
 function renderModeBtn() {
   const mobile = document.documentElement.classList.contains('mobile');
-  $('#modeBtn').textContent = mobile ? '🖥️ Escritorio' : '📱 Modo celular';
+  $('#modeBtn').textContent = mobile ? 'Modo escritorio' : 'Modo celular';
   $('#modeBtn').title = mobile ? 'Ver la página como en un computador' : 'Ver la página adaptada al celular';
 }
 $('#modeBtn').addEventListener('click', () => {

@@ -142,7 +142,7 @@ main { padding: 16px clamp(16px, 4vw, 40px) 32px; max-width: 1280px; }
 .chip:hover { border-color: var(--red); color: var(--red); }
 .chat-input { display: flex; gap: 8px; padding: 12px 16px 16px; }
 .chat-input input { flex: 1; border: 1px solid var(--line); border-radius: 99px; padding: 10px 16px; }
-.chat-input button { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--red); color: #fff; cursor: pointer; font-size: 16px; }
+.chat-input button { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--red); color: #fff; cursor: pointer; font-size: 16px; display: grid; place-items: center; }
 
 .foot { color: var(--muted); font-size: 12px; padding: 0 clamp(16px, 4vw, 40px) 24px; }
 
@@ -209,7 +209,7 @@ html.mobile .tabs {
 }
 html.mobile .tabs button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border-radius: 10px; border-bottom: 0; font-size: 12px; }
 html.mobile .tabs button b, html.mobile .tabs button .tl { display: none; }
-html.mobile .tabs button i { display: block; font-size: 20px; line-height: 1.2; }
+html.mobile .tabs button i { display: block; line-height: 0; }
 html.mobile .tabs button .ts { display: block; }
 html.mobile .tabs button.active { background: var(--pink); color: var(--red-dark); }
 html.mobile body.locked .tabs, html.mobile body.locked .source-actions { display: none; }
