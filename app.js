@@ -681,7 +681,7 @@ function exportWorkbook() {
   XLSX.writeFile(wb, 'kpis_marketing_con_log.xlsx');
 }
 
-// ---------- agente de datos (pestaña 5, función /api/agente-datos) ----------
+// ---------- agente de datos (pestaña 2, función /api/agente-datos) ----------
 // La IA conversa y anota las cifras en el borrador; el servidor valida con reglas fijas; la persona revisa y confirma.
 const AGENT_URL = CFG.agenteDatos || 'api/agente-datos';
 const DRAFT_FIELDS = [['inversion', 'Inversión (USD)'], ['impresiones', 'Impresiones'], ['clics', 'Clics'], ['conversiones', 'Conversiones'], ['ingresos_atribuidos', 'Ingresos (USD)']];
@@ -1049,7 +1049,7 @@ async function onSignedIn(user) {
   $('#userRole').className = 'role' + (state.isAdmin ? ' admin' : '');
   $('#userBox').hidden = false;
   await startApp();
-  loadRequests();  // solicitudes de carga de datos (el admin ve cuántas hay pendientes en la pestaña 5)
+  loadRequests();  // solicitudes de carga de datos (el admin ve cuántas hay pendientes en la pestaña 2)
 }
 const AUTH_ERRORS = [
   [/invalid login credentials/i, 'Correo o contraseña incorrectos.'],
