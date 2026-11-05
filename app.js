@@ -687,7 +687,10 @@ function exportWorkbook() {
 const AGENT_URL = CFG.agenteDatos || 'api/agente-datos';
 const DRAFT_FIELDS = [['inversion', 'Inversión (USD)'], ['impresiones', 'Impresiones'], ['clics', 'Clics'], ['conversiones', 'Conversiones'], ['ingresos_atribuidos', 'Ingresos (USD)']];
 const isoDate = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-state.agent = { hist: [], draft: null, check: null, touched: false, busy: false };
+const MAX_DRAFT_WEEKS = 26;
+state.agent = { hist: [], drafts: [], check: null, touched: false, busy: false };
+const weeksLabel = drafts => `${drafts.length === 1 ? 'la semana' : 'las semanas'} ${drafts.map(d => d.semana ?? '—').join(', ')}`;
+const blankWeek = (semana, fecha_inicio) => ({ semana, fecha_inicio, filas: state.channels.map(canal => ({ canal })) });
 
 async function callAgent(payload) {
   const session = (await SB.auth.getSession()).data.session;
@@ -716,43 +719,58 @@ function agentReset() {
   const next = start ? new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7) : null;
   state.agent = {
     hist: [], check: null, touched: false, busy: false,
-    draft: { semana: last != null ? last + 1 : null, fecha_inicio: next ? isoDate(next) : null, filas: state.channels.map(canal => ({ canal })) },
+    drafts: [blankWeek(last != null ? last + 1 : null, next ? isoDate(next) : null)],
   };
   $('#agentLog').innerHTML = '';
   const ready = aiAvailable();
   agentMsg('bot', ready
-    ? `Hola, soy el agente de datos. Vamos a cargar la semana ${state.agent.draft.semana ?? 'nueva'}${next ? ` (inicia el ${next.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })})` : ''} del escenario ${scenarioName(state.scenario)}. ` +
-      `Cuéntame las cifras de cada canal (${state.channels.join(', ')}): inversión, impresiones, clics, conversiones e ingresos. Puedes escribirlas como quieras, por ejemplo "Google Ads: invertimos 12 mil, 480 mil impresiones…". También puedes llenarlas directo en la tabla.`
+    ? `Hola, soy el agente de datos. Vamos a cargar datos del escenario ${scenarioName(state.scenario)}; la siguiente es la semana ${state.agent.drafts[0].semana ?? 'nueva'}${next ? ` (inicia el ${next.toLocaleDateString('es-CO', { day: 'numeric', month: 'long' })})` : ''}. ` +
+      `Cuéntame las cifras de cada canal (${state.channels.join(', ')}): inversión, impresiones, clics, conversiones e ingresos. Puedes escribirlas como quieras, por ejemplo "Google Ads: invertimos 12 mil, 480 mil impresiones…". ` +
+      'Si tienes varias semanas, pega un párrafo dividido por semanas y armo una tabla para cada una. También puedes llenar las tablas directamente.'
     : 'Para conversar con el agente inicia sesión (usa la IA del servidor). Mientras tanto puedes llenar la tabla a mano y descargar el Excel.');
   $('#agentInput').disabled = !ready;
   renderDraft();
 }
 function renderDraft() {
-  const { draft, check } = state.agent;
-  if (!draft) return;
-  $('#draftTitle').textContent = `Semana ${draft.semana ?? '—'} · escenario ${scenarioName(state.scenario)}`;
-  $('#draftWeek').value = draft.semana ?? '';
-  $('#draftDate').value = draft.fecha_inicio || '';
-  $('#draftTable').innerHTML = `<thead><tr><th>Canal</th>${DRAFT_FIELDS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th></th></tr></thead><tbody>` +
-    (draft.filas.length ? draft.filas.map((f, i) => `<tr><td><input data-i="${i}" data-k="canal" value="${esc(f.canal)}" aria-label="Canal"></td>` +
-      DRAFT_FIELDS.map(([k, l]) => `<td><input class="n" data-i="${i}" data-k="${k}" type="number" min="0" step="any" inputmode="decimal" value="${f[k] ?? ''}" aria-label="${esc(l)} de ${esc(f.canal)}"></td>`).join('') +
-      `<td><button class="btn ghost del" type="button" data-del="${i}" aria-label="Quitar ${esc(f.canal)}">×</button></td></tr>`).join('')
-      : `<tr><td colspan="${DRAFT_FIELDS.length + 2}">Sin canales. Usa «+ Agregar canal».</td></tr>`) + '</tbody>';
+  const { drafts } = state.agent;
+  const head = `<thead><tr><th>Canal</th>${DRAFT_FIELDS.map(([, l]) => `<th class="n">${l}</th>`).join('')}<th></th></tr></thead>`;
+  $('#draftWeeks').innerHTML = !drafts.length ? '<p class="note">No hay semanas en el borrador. Escríbele al agente o usa «+ Agregar semana».</p>' : drafts.map((d, w) => `<div class="week-card">
+      <div class="week-head"><h4 data-week-title="${w}"></h4><button class="btn ghost" type="button" data-del-week="${w}">Quitar semana</button></div>
+      <div class="draft-head">
+        <label class="field">Semana <input data-w="${w}" data-f="semana" type="number" min="1" step="1" inputmode="numeric" value="${d.semana ?? ''}"></label>
+        <label class="field">Fecha de inicio <input data-w="${w}" data-f="fecha_inicio" type="date" value="${esc(d.fecha_inicio || '')}"></label>
+      </div>
+      <div class="table-wrap"><table class="t small draft">${head}<tbody>` +
+    (d.filas.length ? d.filas.map((f, i) => `<tr><td><input data-w="${w}" data-i="${i}" data-k="canal" value="${esc(f.canal)}" aria-label="Canal"></td>` +
+      DRAFT_FIELDS.map(([k, l]) => `<td><input class="n" data-w="${w}" data-i="${i}" data-k="${k}" type="number" min="0" step="any" inputmode="decimal" value="${f[k] ?? ''}" aria-label="${esc(l)} de ${esc(f.canal)}"></td>`).join('') +
+      `<td><button class="btn ghost del" type="button" data-w="${w}" data-del="${i}" aria-label="Quitar ${esc(f.canal)}">×</button></td></tr>`).join('')
+      : `<tr><td colspan="${DRAFT_FIELDS.length + 2}">Sin canales. Usa «+ Agregar canal».</td></tr>`) + `</tbody></table></div>
+      <button class="btn ghost add-row" type="button" data-add-row="${w}">+ Agregar canal</button>
+      <div class="draft-checks" data-week-checks="${w}"></div>
+    </div>`).join('');
   renderDraftChecks();
 }
-// solo avisos y botones: no se vuelve a pintar la tabla para no sacar a la persona de la celda que edita
+// solo avisos y botones: no se vuelven a pintar las tablas para no sacar a la persona de la celda que edita
 function renderDraftChecks() {
-  const { check } = state.agent;
-  $('#draftTitle').textContent = `Semana ${state.agent.draft.semana ?? '—'} · escenario ${scenarioName(state.scenario)}`;
+  const { drafts, check } = state.agent;
+  const semanas = check && check.semanas && check.semanas.length === drafts.length ? check.semanas : null;
+  const nums = drafts.map(d => d.semana).filter(s => s != null);
+  $('#draftTitle').textContent = `${drafts.length === 1 ? `Semana ${drafts[0].semana ?? '—'}` : `${drafts.length} semanas${nums.length ? ` (${nums.join(', ')})` : ''}`} · escenario ${scenarioName(state.scenario)}`;
   const li = (cls, items) => items.map(x => `<li class="${cls}">${esc(x)}</li>`).join('');
-  $('#draftChecks').innerHTML = !check ? '' : check.completo && !check.avisos.length
-    ? '<p class="good">Borrador completo y sin problemas. Revísalo y guárdalo.</p>'
-    : `<ul>${check.faltan.length ? `<li class="miss">Falta: ${esc(check.faltan.slice(0, 6).join(', '))}${check.faltan.length > 6 ? ` y ${check.faltan.length - 6} más` : ''}.</li>` : ''}${li('bad', check.errores)}${li('warn', check.avisos)}</ul>` +
-      (check.completo ? '<p class="good">Listo para guardar (revisa los avisos).</p>' : '');
+  drafts.forEach((d, w) => {
+    $(`[data-week-title="${w}"]`).textContent = `Semana ${d.semana ?? '—'}`;
+    const c = semanas && semanas[w];
+    $(`[data-week-checks="${w}"]`).innerHTML = !c ? '' : c.completo && !c.avisos.length
+      ? '<p class="good">Semana completa y sin problemas.</p>'
+      : `<ul>${c.faltan.length ? `<li class="miss">Falta: ${esc(c.faltan.slice(0, 6).join(', '))}${c.faltan.length > 6 ? ` y ${c.faltan.length - 6} más` : ''}.</li>` : ''}${li('bad', c.errores)}${li('warn', c.avisos)}</ul>` +
+        (c.completo ? '<p class="good">Lista para guardar (revisa los avisos).</p>' : '');
+  });
+  const listas = semanas ? semanas.filter(s => s.completo).length : 0;
+  $('#draftChecks').innerHTML = semanas && drafts.length > 1 ? `<p class="${listas === drafts.length ? 'good' : 'miss'}">${listas} de ${drafts.length} semanas listas.${listas === drafts.length ? ' Revísalas y guárdalas.' : ' Solo se puede enviar cuando todas estén listas.'}</p>` : '';
   const conCuenta = !!(SB && state.user && !state.isUser);
   $('#draftSave').hidden = !(conCuenta && state.isAdmin);
   $('#draftRequest').hidden = !(conCuenta && !state.isAdmin);  // los usuarios piden permiso; el admin guarda directo
-  $('#draftSave').disabled = $('#draftRequest').disabled = !(check && check.completo) || state.agent.busy;
+  $('#draftSave').disabled = $('#draftRequest').disabled = !(semanas && check.completo) || state.agent.busy;
 }
 
 // ---------- solicitudes de carga (usuario → administrador) ----------
@@ -797,17 +815,18 @@ function renderRequests() {
     }).join('');
 }
 $('#draftRequest').addEventListener('click', async () => {
-  const { draft } = state.agent;
-  const nota = prompt(`Se enviará la semana ${draft.semana} (${draft.filas.length} canal(es)) al administrador para que la apruebe.\nNota opcional para el administrador (de dónde salen los datos, etc.):`, '');
+  const { drafts } = state.agent;
+  const que = weeksLabel(drafts);
+  const nota = prompt(`Se enviará${drafts.length > 1 ? 'n' : ''} ${que} al administrador para aprobar${drafts.length > 1 ? ' (una solicitud por semana)' : ''}.\nNota opcional para el administrador (de dónde salen los datos, etc.):`, '');
   if (nota === null) return;
   state.agent.busy = true; renderDraftChecks();
   try {
-    const r = await callAgent({ accion: 'solicitar', borrador: draft, nota });
-    agentMsg('bot', `Listo: envié tu solicitud para agregar la semana ${r.semana} al escenario ${r.escenario}. El administrador la revisará; verás su estado abajo, en «Mis solicitudes».`);
+    const r = await callAgent({ accion: 'solicitar', borradores: drafts, nota });
+    agentMsg('bot', `Listo: envié tu solicitud para agregar ${que} al escenario ${r.escenario}. El administrador la revisará; verás el estado abajo, en «Mis solicitudes».`);
     state.agent.touched = false;
     await loadRequests();
   } catch (e) {
-    if (e.data && e.data.faltan) state.agent.check = e.data;
+    if (e.data && e.data.semanas) state.agent.check = e.data;
     agentMsg('bot', `No se pudo enviar la solicitud: ${e.message}`);
   } finally {
     state.agent.busy = false; renderDraftChecks();
@@ -822,7 +841,7 @@ $('#reqList').addEventListener('click', async e => {
   if (b.dataset.load) {
     // el admin puede corregir las cifras y guardarlas él mismo (la solicitud queda pendiente hasta resolverla)
     if (s.escenario !== state.scenario) { $('#escSel').value = s.escenario; state.scenario = s.escenario; await loadDefault(); }
-    state.agent.draft = { semana: s.semana, fecha_inicio: s.fecha_inicio, filas: s.filas.map(f => ({ ...f })) };
+    state.agent.drafts = [{ semana: s.semana, fecha_inicio: s.fecha_inicio, filas: s.filas.map(f => ({ ...f })) }];
     state.agent.touched = true; state.agent.check = null;
     renderDraft(); draftChanged();
     $('#draftTitle').scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -850,7 +869,7 @@ function draftChanged() {
   renderDraftChecks();
   if (!(SB && state.user)) return;
   draftTimer = setTimeout(async () => {
-    try { const v = await callAgent({ accion: 'validar', borrador: state.agent.draft }); state.agent.check = v; }
+    try { const v = await callAgent({ accion: 'validar', borradores: state.agent.drafts }); state.agent.check = v; }
     catch { /* sin validación del servidor: se valida al conversar o al guardar */ }
     renderDraftChecks();
   }, 600);
@@ -862,9 +881,9 @@ async function sendAgent(text) {
   pending.classList.add('pending');
   state.agent.busy = true; $('#agentInput').disabled = true;
   try {
-    const r = await callAgent({ accion: 'conversar', mensaje: text, historial: state.agent.hist, borrador: state.agent.draft });
+    const r = await callAgent({ accion: 'conversar', mensaje: text, historial: state.agent.hist, borradores: state.agent.drafts });
     state.agent.hist.push({ role: 'user', content: text }, { role: 'assistant', content: r.mensaje });
-    state.agent.draft = r.borrador;
+    state.agent.drafts = r.borradores;
     state.agent.check = r;
     state.agent.touched = true;
     agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`);
@@ -877,10 +896,15 @@ async function sendAgent(text) {
   }
 }
 // libro actual + filas del borrador en «datos_crudos» (reemplaza la misma semana y canal si ya existían)
+const draftRowOk = f => String(f.canal || '').trim() && DRAFT_FIELDS.every(([k]) => Number.isFinite(+f[k]) && f[k] !== '' && f[k] != null);
+// semanas con filas incompletas, que no pasan al Excel: se le avisa a la persona en lugar de omitirlas en silencio
+function draftOmitted() {
+  const malas = state.agent.drafts.filter(d => d.semana == null || !d.filas.length || d.filas.some(f => !draftRowOk(f)));
+  return malas.length ? ` Atención: ${weeksLabel(malas)} tiene${malas.length > 1 ? 'n' : ''} filas incompletas que quedaron por fuera.` : '';
+}
 function draftWorkbook() {
-  const { draft } = state.agent;
-  const filas = draft.filas.filter(f => String(f.canal || '').trim() && DRAFT_FIELDS.every(([k]) => Number.isFinite(+f[k]) && f[k] !== '' && f[k] != null));
-  if (!state.wb || draft.semana == null || !filas.length) return null;
+  const listas = state.agent.drafts.map(d => ({ d, filas: d.filas.filter(draftRowOk) })).filter(x => x.d.semana != null && x.filas.length);
+  if (!state.wb || !listas.length) return null;
   const wsName = state.wb.SheetNames.find(n => norm(n) === 'datos crudos') || 'datos_crudos';
   const rows = state.wb.Sheets[wsName] ? sheetRows(state.wb.Sheets[wsName]) : [];
   const header = rows.length ? Object.keys(rows[0]) : ['Semana', 'Fecha inicio', 'Canal', 'Inversión (USD)', 'Impresiones', 'Clics', 'Conversiones', 'Ingresos atribuidos (USD)'];
@@ -888,13 +912,13 @@ function draftWorkbook() {
     semana: ['semana'], inicio: ['fecha inicio', 'fecha'], canal: ['canal'], inversion: ['inversion', 'gasto'], impresiones: ['impresiones'],
     clics: ['clics', 'clicks'], conversiones: ['conversiones'], ingresos_atribuidos: ['ingresos atribuidos', 'ingresos'],
   });
-  const same = r => toNum(r[col.semana]) === +draft.semana && filas.some(f => norm(f.canal) === norm(r[col.canal]));
-  const nuevas = filas.map(f => {
+  const same = r => listas.some(({ d, filas }) => toNum(r[col.semana]) === +d.semana && filas.some(f => norm(f.canal) === norm(r[col.canal])));
+  const nuevas = listas.flatMap(({ d, filas }) => filas.map(f => {
     const r = Object.fromEntries(header.map(h => [h, '']));
-    r[col.semana] = +draft.semana; if (col.inicio) r[col.inicio] = draft.fecha_inicio || ''; r[col.canal] = String(f.canal).trim();
+    r[col.semana] = +d.semana; if (col.inicio) r[col.inicio] = d.fecha_inicio || ''; r[col.canal] = String(f.canal).trim();
     for (const [k] of DRAFT_FIELDS) if (col[k]) r[col[k]] = +f[k];
     return r;
-  });
+  }));
   const wb = XLSX.utils.book_new();
   for (const n of state.wb.SheetNames) {
     XLSX.utils.book_append_sheet(wb, n === wsName ? XLSX.utils.json_to_sheet([...rows.filter(r => !same(r)), ...nuevas], { header }) : state.wb.Sheets[n], n);
@@ -904,57 +928,81 @@ function draftWorkbook() {
 }
 
 $('#agentForm').addEventListener('submit', e => { e.preventDefault(); const q = $('#agentInput').value; $('#agentInput').value = ''; sendAgent(q); });
-$('#draftWeek').addEventListener('change', e => { state.agent.draft.semana = e.target.value === '' ? null : +e.target.value; draftChanged(); });
-$('#draftDate').addEventListener('change', e => { state.agent.draft.fecha_inicio = e.target.value || null; draftChanged(); });
-$('#draftTable').addEventListener('change', e => {
-  const { i, k } = e.target.dataset;
-  if (i == null) return;
-  state.agent.draft.filas[+i][k] = k === 'canal' ? e.target.value.trim() : (e.target.value === '' ? null : +e.target.value);
+$('#agentInput').addEventListener('keydown', e => {
+  // en escritorio, Enter envía y Mayús+Enter baja de línea; en el celular, Enter baja de línea y se envía con el botón
+  if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !document.documentElement.classList.contains('mobile')) { e.preventDefault(); $('#agentForm').requestSubmit(); }
+});
+$('#draftWeeks').addEventListener('change', e => {
+  const { w, f, i, k } = e.target.dataset;
+  if (w == null) return;
+  const d = state.agent.drafts[+w];
+  if (f === 'semana') d.semana = e.target.value === '' ? null : +e.target.value;
+  else if (f === 'fecha_inicio') d.fecha_inicio = e.target.value || null;
+  else if (i != null) d.filas[+i][k] = k === 'canal' ? e.target.value.trim() : (e.target.value === '' ? null : +e.target.value);
+  else return;
   draftChanged();
 });
-$('#draftTable').addEventListener('click', e => {
+$('#draftWeeks').addEventListener('click', e => {
   const del = e.target.closest('[data-del]');
-  if (!del) return;
-  state.agent.draft.filas.splice(+del.dataset.del, 1);
-  draftChanged(); renderDraft();
+  const add = e.target.closest('[data-add-row]');
+  const delWeek = e.target.closest('[data-del-week]');
+  if (del) state.agent.drafts[+del.dataset.w].filas.splice(+del.dataset.del, 1);
+  else if (add) {
+    const canal = prompt('Nombre del canal nuevo:');
+    if (!canal || !canal.trim()) return;
+    state.agent.drafts[+add.dataset.addRow].filas.push({ canal: canal.trim().slice(0, 60) });
+  } else if (delWeek) {
+    const d = state.agent.drafts[+delWeek.dataset.delWeek];
+    if (!confirm(`¿Quitar la semana ${d.semana ?? 'sin número'} del borrador?`)) return;
+    state.agent.drafts.splice(+delWeek.dataset.delWeek, 1);
+    state.agent.check = null;  // las revisiones ya no corresponden a las semanas que quedan
+  } else return;
+  renderDraft(); draftChanged();
 });
-$('#draftAddRow').addEventListener('click', () => {
-  const canal = prompt('Nombre del canal nuevo:');
-  if (!canal || !canal.trim()) return;
-  state.agent.draft.filas.push({ canal: canal.trim().slice(0, 60) });
-  draftChanged(); renderDraft();
+$('#draftAddWeek').addEventListener('click', () => {
+  const { drafts } = state.agent;
+  if (drafts.length >= MAX_DRAFT_WEEKS) { $('#draftNote').textContent = `El borrador admite hasta ${MAX_DRAFT_WEEKS} semanas. Guarda estas primero.`; return; }
+  const con = drafts.filter(d => d.semana != null).sort((a, b) => b.semana - a.semana)[0];
+  const base = con || { semana: state.weeks.at(-1) ?? null, fecha_inicio: state.starts.get(state.weeks.at(-1)) ? isoDate(state.starts.get(state.weeks.at(-1))) : null };
+  const fecha = base.fecha_inicio ? new Date(`${base.fecha_inicio}T00:00:00`) : null;
+  if (fecha) fecha.setDate(fecha.getDate() + 7);
+  drafts.push(blankWeek(base.semana != null ? base.semana + 1 : null, fecha ? isoDate(fecha) : null));
+  state.agent.check = null;
+  renderDraft(); draftChanged();
 });
 $('#draftReset').addEventListener('click', () => { if (!state.agent.touched || confirm('¿Borrar el borrador y empezar de nuevo?')) agentReset(); });
 $('#draftExcel').addEventListener('click', () => {
   const wb = draftWorkbook();
-  if (!wb) { $('#draftNote').textContent = 'Para descargar el Excel hace falta la semana y todas las cifras de al menos un canal.'; return; }
-  XLSX.writeFile(wb, `kpis_marketing_${state.scenario}_semana_${state.agent.draft.semana}.xlsx`);
-  $('#draftNote').textContent = 'Excel descargado con la semana nueva en la pestaña «datos_crudos». Puedes subirlo a data/ en GitHub o cargarlo con «Cargar mi Excel».';
+  if (!wb) { $('#draftNote').textContent = 'Para descargar el Excel hace falta el número de semana y todas las cifras de al menos un canal.'; return; }
+  const nums = state.agent.drafts.map(d => d.semana).filter(s => s != null);
+  XLSX.writeFile(wb, `kpis_marketing_${state.scenario}_${nums.length > 1 ? 'semanas' : 'semana'}_${nums.join('-')}.xlsx`);
+  $('#draftNote').textContent = `Excel descargado con los datos nuevos en la pestaña «datos_crudos». Puedes subirlo a data/ en GitHub o cargarlo con «Cargar mi Excel».${draftOmitted()}`;
 });
 $('#draftPreview').addEventListener('click', () => {
   const wb = draftWorkbook();
-  if (!wb) { $('#draftNote').textContent = 'Para verlo en el tablero hace falta la semana y todas las cifras de al menos un canal.'; return; }
-  const draft = state.agent.draft;
-  if (applyWorkbook(wb, `datos del agente (semana ${draft.semana})`, 'user')) {
-    state.agent.draft = draft;  // applyWorkbook no toca el borrador, pero se deja explícito
+  if (!wb) { $('#draftNote').textContent = 'Para verlo en el tablero hace falta el número de semana y todas las cifras de al menos un canal.'; return; }
+  const aviso = draftOmitted();
+  if (applyWorkbook(wb, `datos del agente (${weeksLabel(state.agent.drafts)})`, 'user', aviso ? [['', esc(aviso.trim())]] : [])) {
     document.querySelector('.tabs button[data-tab="kpis"]').click();
   }
 });
 $('#draftSave').addEventListener('click', async () => {
-  const { draft } = state.agent;
-  if (!confirm(`Se guardará la semana ${draft.semana} (${draft.filas.length} canal(es)) en la base de datos del escenario ${scenarioName(state.scenario)}. Todos los usuarios verán estas cifras. ¿Continuar?`)) return;
+  const { drafts } = state.agent;
+  if (!confirm(`Se guardará${drafts.length > 1 ? 'n' : ''} ${weeksLabel(drafts)} en la base de datos del escenario ${scenarioName(state.scenario)}. Todos los usuarios verán estas cifras. ¿Continuar?`)) return;
   state.agent.busy = true; renderDraft();
   $('#draftSave').textContent = 'Guardando…';
   try {
-    const r = await callAgent({ accion: 'guardar', borrador: draft });
-    agentMsg('bot', `Listo: guardé la semana ${r.semana} (${r.filas} canal(es)) en la base de datos del escenario ${r.escenario}. Ya aparece en la Hoja de KPIs.`);
+    const r = await callAgent({ accion: 'guardar', borradores: drafts });
+    const guardadas = r.semanas || [r.semana];
+    const aviso = `Listo: guardé ${guardadas.length > 1 ? 'las semanas' : 'la semana'} ${guardadas.join(', ')} (${r.filas} fila(s)) en la base de datos del escenario ${r.escenario}. Ya aparece${guardadas.length > 1 ? 'n' : ''} en la Hoja de KPIs.`;
     state.agent.busy = false;
     await loadDefault();
     await loadLog().catch(() => {});
     state.agent.touched = false;
     agentReset();
+    agentMsg('bot', aviso);  // después de reiniciar el borrador, para que el mensaje no se borre
   } catch (e) {
-    if (e.data && e.data.faltan) state.agent.check = e.data;
+    if (e.data && e.data.semanas) state.agent.check = e.data;
     agentMsg('bot', `No se pudo guardar: ${e.message}`);
   } finally {
     state.agent.busy = false;

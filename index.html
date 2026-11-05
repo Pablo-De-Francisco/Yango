@@ -201,10 +201,10 @@
     <section id="tab-agente" class="tab">
       <div class="grid2 agent-grid">
         <div class="win chat">
-          <div class="win-bar"><i></i><i></i><i></i><span>Agente de datos · carga de una semana</span></div>
+          <div class="win-bar"><i></i><i></i><i></i><span>Agente de datos · carga por semanas</span></div>
           <div class="win-body chat-body" id="agentLog"></div>
           <form class="chat-input" id="agentForm" autocomplete="off">
-            <input id="agentInput" type="text" placeholder="Escribe los datos, por ejemplo: Google Ads invirtió 12 mil…" aria-label="Mensaje al agente">
+            <textarea id="agentInput" rows="2" maxlength="8000" placeholder="Escribe o pega los datos. Ejemplo: Semana 44: Google Ads invirtió 12 mil… Semana 45: …" aria-label="Mensaje al agente"></textarea>
             <button type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
           </form>
         </div>
@@ -212,12 +212,8 @@
           <div class="win-bar"><i></i><i></i><i></i><span>Borrador · pestaña «datos_crudos»</span></div>
           <div class="win-body">
             <h3 id="draftTitle">Semana nueva</h3>
-            <div class="draft-head">
-              <label class="field">Semana <input id="draftWeek" type="number" min="1" step="1" inputmode="numeric"></label>
-              <label class="field">Fecha de inicio <input id="draftDate" type="date"></label>
-            </div>
-            <div class="table-wrap"><table id="draftTable" class="t small draft"></table></div>
-            <button class="btn ghost" id="draftAddRow" type="button">+ Agregar canal</button>
+            <div id="draftWeeks"></div>
+            <button class="btn ghost" id="draftAddWeek" type="button">+ Agregar semana</button>
             <div id="draftChecks" class="draft-checks"></div>
             <div class="row-actions">
               <button class="btn primary" id="draftSave" type="button" hidden>Guardar en la base de datos</button>
@@ -226,7 +222,7 @@
               <button class="btn" id="draftPreview" type="button">Ver en el tablero</button>
               <button class="btn ghost" id="draftReset" type="button">Empezar de nuevo</button>
             </div>
-            <p class="note" id="draftNote">El agente pide los datos y los anota aquí. Puedes corregir cualquier celda antes de guardar. Nada se guarda sin que lo confirmes.</p>
+            <p class="note" id="draftNote">El agente pide los datos y arma una tabla por semana. Puedes corregir cualquier celda antes de guardar. Nada se guarda sin que lo confirmes.</p>
           </div>
         </div>
       </div>

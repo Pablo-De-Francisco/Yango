@@ -263,7 +263,7 @@ html.mobile .foot { padding: 0 16px 16px; }
 .t.draft input { width: 100%; min-width: 84px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 6px; background: #fff; color: var(--ink); font-variant-numeric: tabular-nums; }
 .t.draft input.n { text-align: right; }
 .t.draft .del { padding: 2px 8px; color: var(--muted); }
-#draftAddRow { margin-top: 8px; }
+#draftAddWeek { margin-bottom: 4px; }
 .draft-checks { margin-top: 10px; font-size: 13px; }
 .draft-checks ul { margin: 0; padding-left: 18px; }
 .draft-checks li { margin: 3px 0; }
@@ -315,3 +315,12 @@ html.mobile .start-menu h2 { font-size: 21px; }
 html.mobile .start-grid { grid-template-columns: 1fr; gap: 12px; }
 html.mobile .start-card { padding: 16px; }
 @media (max-width: 860px) { .start-grid { grid-template-columns: 1fr; } }
+
+/* agente de datos: una tabla por semana */
+.week-card { border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.week-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.week-head h4 { margin: 0; font-size: 15px; }
+.week-card .add-row { margin-top: 8px; }
+.chat-input textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 10px 16px; font: inherit; line-height: 1.4; resize: vertical; max-height: 240px; }
+html.mobile .chat-input textarea { font-size: 16px; resize: none; }
+html.mobile .week-card { padding: 10px; }
