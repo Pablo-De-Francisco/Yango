@@ -665,7 +665,8 @@ async function loadDefault() {
 async function loadFile(file) {
   if (!file) return;
   if (!/\.xlsx?$/i.test(file.name)) { renderAlerts([['err', 'El archivo debe ser .xlsx o .xls.']]); return; }
-  try { applyWorkbook(readWb(await file.arrayBuffer()), file.name, 'user'); }
+  await state.ready;  // que la carga inicial no pise el archivo del usuario
+  try { if (applyWorkbook(readWb(await file.arrayBuffer()), file.name, 'user')) closeStartMenu('kpis'); }
   catch (e) { renderAlerts([['err', `No pude leer ${esc(file.name)}: ${esc(e.message)}`]]); }
 }
 
@@ -972,6 +973,33 @@ document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click
   }
   if (b.dataset.tab === 'agente') loadRequests();
 }));
+// ---------- menú de inicio ----------
+function openStartMenu() {
+  document.body.classList.add('inicio');
+  $('#startMenu').hidden = false;
+  window.scrollTo(0, 0);
+}
+function closeStartMenu(tab) {
+  if ($('#startMenu').hidden) return;
+  $('#startMenu').hidden = true;
+  document.body.classList.remove('inicio');
+  document.querySelector(`.tabs button[data-tab="${tab}"]`).click();
+  window.scrollTo(0, 0);
+}
+$('#homeBtn').addEventListener('click', openStartMenu);
+$('#startAgent').addEventListener('click', () => closeStartMenu('agente'));
+$('#startExplore').addEventListener('click', async () => {
+  closeStartMenu('kpis');
+  await state.ready;
+  // volver a los datos base si había un archivo propio u otro escenario
+  const base = state.scenarios.some(s => s.id === 'base') ? 'base' : state.scenarios[0].id;
+  if (state.isUser || state.scenario !== base) {
+    state.scenario = base;
+    $('#escSel').value = base;
+    loadDefault();
+  }
+});
+
 // ---------- modo celular / escritorio (el modo inicial lo pone el script del <head> de index.html) ----------
 function renderModeBtn() {
   const mobile = document.documentElement.classList.contains('mobile');
@@ -1020,9 +1048,13 @@ $('#logUserSel').addEventListener('change', e => { state.logUser = e.target.valu
 
 // ---------- cuentas ----------
 async function startApp() {
-  await loadScenarios();
-  if (window.XLSX) await loadDefault();
-  else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
+  openStartMenu();
+  state.ready = (async () => {
+    await loadScenarios();
+    if (window.XLSX) await loadDefault();
+    else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
+  })();
+  await state.ready;
   await loadLog();
 }
 function showGate(msg = '', cls = '') {

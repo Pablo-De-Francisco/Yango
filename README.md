@@ -11,6 +11,8 @@ El prototipo tiene tres piezas, alimentadas por una **base de datos Supabase** (
 
 Además, un **registro (log_ia)** de briefings aprobados y preguntas. Con Supabase el registro es **central** y cada consulta queda asociada a la **cuenta** que la hizo.
 
+Al entrar aparece un **menú de inicio** con tres caminos: descargar el Excel base, modificarlo a mano y subirlo; subir los datos mediante el agente; o explorar la herramienta con los datos base simulados. El botón **Menú de inicio** lo vuelve a abrir.
+
 Con Supabase configurado, **para entrar hace falta una cuenta** (correo y contraseña). Cada usuario ve solo sus consultas; las cuentas con rol **admin** ven las de todos, con filtro por usuario.
 
 Un selector de **escenario** permite comparar cuatro conjuntos de datos simulados: *Base*, *Muy favorable*, *Neutro* y *Desfavorable* (no son resultados reales).
