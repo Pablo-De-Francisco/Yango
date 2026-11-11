@@ -1142,6 +1142,7 @@ const AUTH_ERRORS = [
   [/password should be at least/i, 'La contraseña debe tener al menos 6 caracteres.'],
   [/signups not allowed|signup.*disabled/i, 'La creación de cuentas está desactivada. Pide acceso al administrador.'],
   [/rate limit/i, 'Demasiados intentos. Espera unos minutos y vuelve a probar.'],
+  [/captcha/i, 'No se pudo completar la verificación de seguridad. Espera a que termine la casilla de Cloudflare y vuelve a intentarlo.'],
 ];
 const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e.message)) || [, e.message])[1];
 
