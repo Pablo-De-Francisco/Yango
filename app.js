@@ -1148,17 +1148,20 @@ const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e.message)) || [, e.m
 // ---------- protección contra bots ----------
 // CAPTCHA de Cloudflare Turnstile, si config.js trae la clave del sitio (y Supabase tiene activada la protección con la clave secreta).
 // Además, tras 5 intentos fallidos seguidos el formulario espera 30 s antes de volver a intentar.
-let captchaToken = null, captchaId = null, fallosAcceso = 0;
+let captchaToken = null, captchaId = null, captchaFallo = false, fallosAcceso = 0;
 function prepararCaptcha() {
   if (!CFG.turnstileSiteKey || captchaId !== null) return;
   const caja = $('#captcha'); caja.hidden = false;
   const s = document.createElement('script');
   s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
   s.async = true;
+  s.onerror = () => { captchaFallo = true; };
   s.onload = () => {
     captchaId = window.turnstile.render(caja, {
       sitekey: CFG.turnstileSiteKey, language: 'es',
-      callback: t => { captchaToken = t; }, 'expired-callback': () => { captchaToken = null; },
+      callback: t => { captchaToken = t; captchaFallo = false; }, 'expired-callback': () => { captchaToken = null; },
+      // si Cloudflare no carga (bloqueo de red, dominio no autorizado), el formulario no se bloquea: Supabase decide
+      'error-callback': codigo => { captchaFallo = true; console.warn('Turnstile no disponible', codigo); return true; },
     });
   };
   document.head.appendChild(s);
@@ -1169,7 +1172,7 @@ $('#authForm').addEventListener('submit', async e => {
   e.preventDefault();
   const signup = e.submitter && e.submitter.value === 'signup';
   const email = $('#authEmail').value.trim(), password = $('#authPass').value;
-  if (CFG.turnstileSiteKey && !captchaToken) return showGate('Completa la verificación de seguridad antes de continuar.', 'err');
+  if (CFG.turnstileSiteKey && !captchaToken && !captchaFallo) return showGate('Completa la verificación de seguridad antes de continuar.', 'err');
   showGate(signup ? 'Creando la cuenta…' : 'Entrando…');
   const opciones = captchaToken ? { captchaToken } : {};
   const { data, error } = signup

@@ -10,7 +10,7 @@ window.COPILOTO_CONFIG = {
   // Protección contra bots (opcional): clave del sitio de Cloudflare Turnstile. Es pública por diseño.
   // Para activarla, crea el sitio en Cloudflare Turnstile, pega aquí la «site key» y, en Supabase →
   // Authentication → Attack Protection, activa «CAPTCHA protection» con Turnstile y la «secret key».
-  turnstileSiteKey: '',
+  turnstileSiteKey: '0x4AAAAAAF8XUo9SR4UP1usP',
 
   // Escenarios cuando no hay base de datos (con Supabase se leen de la tabla «escenarios»).
   escenarios: [
