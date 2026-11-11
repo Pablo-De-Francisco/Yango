@@ -327,3 +327,7 @@ html.mobile .week-card { padding: 10px; }
 
 /* verificación contra bots en el acceso */
 .captcha { margin-top: 12px; min-height: 65px; }
+.captcha-modal { position: fixed; inset: 0; z-index: 50; background: rgba(0, 0, 0, .45); display: grid; place-items: center; padding: 16px; }
+.captcha-modal[hidden] { display: none; }
+.captcha-card { width: min(100%, 420px); }
+.captcha-card p { margin: 0 0 8px; font-size: 14px; }

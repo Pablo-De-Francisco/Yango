@@ -260,6 +260,18 @@
     Asistente con IA (Gemini) que responde solo con los datos del escenario; si la IA no está disponible, responde un motor de reglas. Escenarios simulados: no son resultados reales.
   </footer>
 
+  <!-- verificación de seguridad que pide el servidor cada 5 consultas a la IA -->
+  <div class="captcha-modal" id="captchaModal" hidden role="dialog" aria-modal="true" aria-labelledby="captchaModalTitulo">
+    <div class="win captcha-card">
+      <div class="win-bar"><i></i><i></i><i></i><span id="captchaModalTitulo">Verificación de seguridad</span></div>
+      <div class="win-body">
+        <p id="captchaModalMsg"></p>
+        <div id="captchaModalWidget" class="captcha"></div>
+        <div class="row-actions"><button class="btn ghost" id="captchaCancel" type="button">Cancelar</button></div>
+      </div>
+    </div>
+  </div>
+
   <!-- librerías externas con versión fija e integridad verificada (SRI): si el archivo cambia, el navegador no lo ejecuta.
        SheetJS 0.20.3 corrige las vulnerabilidades de la 0.18.5 al leer archivos (contaminación de prototipos y ReDoS). -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>

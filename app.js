@@ -560,14 +560,28 @@ function pushMsg(who, text, src) {
 // Disponible con sesión iniciada y datos de Supabase; con un Excel propio se usan las reglas locales.
 const AI_URL = CFG.asistenteIA || 'api/asistente';
 const aiAvailable = () => !!(SB && state.user && !state.isUser);
+// Llama a una función de la IA; si el servidor pide el CAPTCHA (cada 5 consultas), lo muestra y repite la llamada.
+async function postConCaptcha(url, cuerpo) {
+  for (let intento = 0; intento < 3; intento++) {
+    const session = (await SB.auth.getSession()).data.session;
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+      body: JSON.stringify(cuerpo),
+    });
+    const data = await r.json().catch(() => ({}));
+    if (r.status === 428 && data.captcha) {
+      const token = await pedirCaptcha(data.error);
+      if (!token) throw Object.assign(new Error('Se canceló la verificación de seguridad.'), { data: {} });
+      cuerpo = { ...cuerpo, captchaToken: token };
+      continue;
+    }
+    return { r, data };
+  }
+  throw Object.assign(new Error('No se pudo completar la verificación de seguridad.'), { data: {} });
+}
 async function askAI(modo, pregunta = '') {
-  const session = (await SB.auth.getSession()).data.session;
-  const r = await fetch(AI_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
-    body: JSON.stringify({ modo, pregunta, escenario: state.scenario, semana: state.week, historial: modo === 'pregunta' ? state.chatHist : [] }),
-  });
-  const data = await r.json().catch(() => ({}));
+  const { r, data } = await postConCaptcha(AI_URL, { modo, pregunta, escenario: state.scenario, semana: state.week, historial: modo === 'pregunta' ? state.chatHist : [] });
   if (!r.ok) throw new Error(data.error || `error ${r.status}`);
   return data;
 }
@@ -696,13 +710,7 @@ const weeksLabel = drafts => `${drafts.length === 1 ? 'la semana' : 'las semanas
 const blankWeek = (semana, fecha_inicio) => ({ semana, fecha_inicio, filas: state.channels.map(canal => ({ canal })) });
 
 async function callAgent(payload) {
-  const session = (await SB.auth.getSession()).data.session;
-  const r = await fetch(AGENT_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
-    body: JSON.stringify({ escenario: state.scenario, ...payload }),
-  });
-  const data = await r.json().catch(() => ({}));
+  const { r, data } = await postConCaptcha(AGENT_URL, { escenario: state.scenario, ...payload });
   if (!r.ok) throw Object.assign(new Error(data.error || `error ${r.status}`), { data });
   return data;
 }
@@ -1150,24 +1158,49 @@ const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e.message)) || [, e.m
 // CAPTCHA de Cloudflare Turnstile, si config.js trae la clave del sitio (y Supabase tiene activada la protección con la clave secreta).
 // Además, tras 5 intentos fallidos seguidos el formulario espera 30 s antes de volver a intentar.
 let captchaToken = null, captchaId = null, captchaFallo = false, fallosAcceso = 0;
+let turnstileListo = null;
+function cargarTurnstile() {
+  if (!turnstileListo) turnstileListo = new Promise((ok, mal) => {
+    const s = document.createElement('script');
+    s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+    s.async = true;
+    s.onload = () => ok(window.turnstile);
+    s.onerror = () => { turnstileListo = null; mal(new Error('No se pudo cargar la verificación de seguridad.')); };
+    document.head.appendChild(s);
+  });
+  return turnstileListo;
+}
+// Verificación pedida por el servidor con la sesión abierta: ventana con el CAPTCHA; devuelve el token o null si se cancela.
+function pedirCaptcha(mensaje) {
+  return new Promise(async resolver => {
+    const modal = $('#captchaModal'), caja = $('#captchaModalWidget');
+    $('#captchaModalMsg').textContent = mensaje || 'Confirma que no eres un robot para seguir usando la IA.';
+    caja.innerHTML = ''; modal.hidden = false;
+    let id = null;
+    const cerrar = token => { modal.hidden = true; if (id !== null && window.turnstile) window.turnstile.remove(id); $('#captchaCancel').onclick = null; resolver(token); };
+    $('#captchaCancel').onclick = () => cerrar(null);
+    try {
+      const ts = await cargarTurnstile();
+      id = ts.render(caja, { sitekey: CFG.turnstileSiteKey, language: 'es', callback: t => cerrar(t), 'error-callback': () => { $('#captchaModalMsg').textContent = 'La verificación falló. Cierra esta ventana e intenta de nuevo.'; return true; } });
+    } catch (e) {
+      $('#captchaModalMsg').textContent = e.message;
+    }
+  });
+}
 function prepararCaptcha() {
   if (!CFG.turnstileSiteKey || captchaId !== null) return;
   const caja = $('#captcha'); caja.hidden = false;
-  const s = document.createElement('script');
-  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
-  s.async = true;
-  s.onerror = () => { captchaFallo = true; };
-  s.onload = () => {
+  captchaId = -1;  // evita cargarlo dos veces mientras se descarga
+  cargarTurnstile().then(() => {
     captchaId = window.turnstile.render(caja, {
       sitekey: CFG.turnstileSiteKey, language: 'es',
       callback: t => { captchaToken = t; captchaFallo = false; }, 'expired-callback': () => { captchaToken = null; },
       // si Cloudflare no carga (bloqueo de red, dominio no autorizado), el formulario no se bloquea: Supabase decide
       'error-callback': codigo => { captchaFallo = true; console.warn('Turnstile no disponible', codigo); return true; },
     });
-  };
-  document.head.appendChild(s);
+  }).catch(() => { captchaFallo = true; });
 }
-function reiniciarCaptcha() { captchaToken = null; if (captchaId !== null && window.turnstile) window.turnstile.reset(captchaId); }
+function reiniciarCaptcha() { captchaToken = null; if (captchaId !== null && captchaId !== -1 && window.turnstile) window.turnstile.reset(captchaId); }
 
 $('#authForm').addEventListener('submit', async e => {
   e.preventDefault();

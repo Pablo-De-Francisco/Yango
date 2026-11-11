@@ -6,7 +6,7 @@
 // Variables de entorno en Vercel: GEMINI_API_KEY (o ANTHROPIC_API_KEY) y, para guardar, SUPABASE_SERVICE_ROLE_KEY.
 import { bearer, usuario, sbJson, sbFetch, generarJSON, errorHttp, proveedorIA } from '../lib/copiloto.js';
 import { correoConfigurado, crearTransporte, correoHtml } from '../lib/correo.js';
-import { leerCuerpo, escenarioValido, enteroValido, dentroDelLimite, UUID, cabecerasApi } from '../lib/seguridad.js';
+import { leerCuerpo, escenarioValido, enteroValido, dentroDelLimite, exigirCaptcha, UUID, cabecerasApi } from '../lib/seguridad.js';
 
 export const config = { maxDuration: 60 };
 
@@ -253,6 +253,11 @@ export default async function handler(req, res) {
     const esAdmin = async () => (await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []))[0]?.rol === 'admin';
     const necesitaServicio = ['guardar', 'solicitar', 'solicitudes', 'aprobar', 'rechazar'].includes(accion);
     if (necesitaServicio && !SERVICIO) return res.status(503).json({ error: 'El guardado de datos no está configurado por ahora.' });
+    // conversar usa la IA: cada 5 consultas a la IA se pide de nuevo el CAPTCHA
+    if (accion === 'conversar') {
+      const captcha = await exigirCaptcha(req, user, body.captchaToken);
+      if (captcha) return res.status(captcha.status).json(captcha.body);
+    }
     if (LIMITES[accion] && (await dentroDelLimite(user, `agente-${accion}`, LIMITES[accion])) === false) {
       return res.status(429).json({ error: `Llegaste al límite de ${LIMITES[accion]} mensajes por hora al agente. Intenta más tarde.` });
     }

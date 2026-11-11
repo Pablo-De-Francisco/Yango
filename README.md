@@ -61,6 +61,7 @@ Variables de entorno en **Vercel → Settings → Environment Variables** (despu
 | `GEMINI_API_KEY` | clave gratuita de [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (o `ANTHROPIC_API_KEY` para usar Claude, de pago). En el plan gratuito Google puede usar lo enviado para mejorar sus productos: los datos del prototipo son simulados y sin datos personales |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API Keys → **secret key** (solo aquí, nunca en `config.js`) |
 | `CRON_SECRET` | una frase larga cualquiera; Vercel la usa para autorizar el envío programado |
+| `TURNSTILE_SECRET` | Secret Key del widget de Cloudflare Turnstile: con ella el servidor pide el CAPTCHA cada 5 consultas a la IA |
 | `SMTP_USER` | la cuenta de Gmail que envía los correos |
 | `SMTP_PASS` | **contraseña de aplicación** de esa cuenta (Google → Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones) |
 
@@ -84,7 +85,7 @@ Ejecuta una vez `supabase/seguridad.sql` en el SQL Editor (también está al fin
 | 8 | Sesión | Supabase Auth guarda la sesión en el navegador (no hay cookies propias); la CSP reduce el riesgo de robo por XSS |
 | 9 | Contraseñas con hash | Las gestiona Supabase Auth (bcrypt); la app nunca las guarda |
 | 10 | Rate limiting | En el servidor, con la tabla `uso_api`: 40 consultas al asistente, 60 mensajes al agente y 10 correos por usuario y hora |
-| 11 | Protección contra bots | CAPTCHA de Cloudflare Turnstile opcional (`turnstileSiteKey` en `config.js` + Supabase → Attack Protection) y espera de 30 s tras 5 intentos fallidos |
+| 11 | Protección contra bots | CAPTCHA de Cloudflare Turnstile obligatorio al crear cuenta e iniciar sesión (`turnstileSiteKey` en `config.js` + Supabase → Attack Protection) y de nuevo cada 5 consultas a la IA, validado en el servidor con `TURNSTILE_SECRET` en Vercel. Espera de 30 s tras 5 intentos fallidos |
 | 12 | Consultas parametrizadas | Todo valor que entra a una consulta se valida (escenario, número, UUID) o se codifica; PostgREST no ejecuta SQL libre |
 | 13 | Validación de entradas | Cuerpo JSON con tamaño máximo, acción permitida, correo de un solo destinatario sin saltos de línea, reglas fijas para los datos |
 | 14 | Contenido sanitizado | Todo lo que se muestra o se envía por correo se escapa (también el asunto del correo) |

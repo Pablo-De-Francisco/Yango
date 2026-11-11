@@ -3,7 +3,7 @@
 // (las reglas RLS siguen aplicando) y calcula las métricas.  3) La IA (Gemini o Claude) responde usando solo esos datos.
 // Variable de entorno en Vercel: GEMINI_API_KEY (plan gratuito) o ANTHROPIC_API_KEY.
 import { bearer, usuario, sbFetch, contexto, generar, errorHttp, proveedorIA } from '../lib/copiloto.js';
-import { leerCuerpo, escenarioValido, dentroDelLimite, cabecerasApi } from '../lib/seguridad.js';
+import { leerCuerpo, escenarioValido, dentroDelLimite, exigirCaptcha, cabecerasApi } from '../lib/seguridad.js';
 
 export const config = { maxDuration: 60 };
 
@@ -32,6 +32,9 @@ export default async function handler(req, res) {
     if (modo === 'pregunta' && !pregunta) return res.status(400).json({ error: 'Escribe una pregunta.' });
     const escenario = escenarioValido(body.escenario);
 
+    // cada 5 consultas a la IA se pide de nuevo el CAPTCHA (lo valida el servidor)
+    const captcha = await exigirCaptcha(req, user, body.captchaToken);
+    if (captcha) return res.status(captcha.status).json(captcha.body);
     // el límite lo lleva el servidor: no depende de que el navegador registre la consulta
     const permitido = await dentroDelLimite(user, 'asistente', MAX_POR_HORA);
     if (permitido === false || (permitido === null && await consultasUltimaHora(user, token) >= MAX_POR_HORA)) {
