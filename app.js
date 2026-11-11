@@ -662,9 +662,12 @@ async function loadDefault() {
     renderAlerts([...extra, ['err', `No pude descargar <b>${esc(url)}</b> (${esc(e.message)}). Usa «Cargar mi Excel».`]]);
   }
 }
+const MAX_EXCEL = 5 * 1024 * 1024;  // 5 MB: un Excel de campañas semanales pesa mucho menos
 async function loadFile(file) {
   if (!file) return;
+  // solo Excel, con tamaño razonable: se lee en el navegador y nunca se sube al servidor
   if (!/\.xlsx?$/i.test(file.name)) { renderAlerts([['err', 'El archivo debe ser .xlsx o .xls.']]); return; }
+  if (!file.size || file.size > MAX_EXCEL) { renderAlerts([['err', 'El archivo está vacío o pesa más de 5 MB.']]); return; }
   await state.ready;  // que la carga inicial no pise el archivo del usuario
   try { if (applyWorkbook(readWb(await file.arrayBuffer()), file.name, 'user')) closeStartMenu('kpis'); }
   catch (e) { renderAlerts([['err', `No pude leer ${esc(file.name)}: ${esc(e.message)}`]]); }
@@ -1110,6 +1113,7 @@ function showGate(msg = '', cls = '') {
   $('#authGate').hidden = false;
   $('#userBox').hidden = true;
   $('#authMsg').textContent = msg; $('#authMsg').className = 'gate-msg ' + cls;
+  prepararCaptcha();
 }
 async function onSignedIn(user) {
   state.user = user;
@@ -1141,15 +1145,47 @@ const AUTH_ERRORS = [
 ];
 const authError = e => (AUTH_ERRORS.find(([re]) => re.test(e.message)) || [, e.message])[1];
 
+// ---------- protección contra bots ----------
+// CAPTCHA de Cloudflare Turnstile, si config.js trae la clave del sitio (y Supabase tiene activada la protección con la clave secreta).
+// Además, tras 5 intentos fallidos seguidos el formulario espera 30 s antes de volver a intentar.
+let captchaToken = null, captchaId = null, fallosAcceso = 0;
+function prepararCaptcha() {
+  if (!CFG.turnstileSiteKey || captchaId !== null) return;
+  const caja = $('#captcha'); caja.hidden = false;
+  const s = document.createElement('script');
+  s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+  s.async = true;
+  s.onload = () => {
+    captchaId = window.turnstile.render(caja, {
+      sitekey: CFG.turnstileSiteKey, language: 'es',
+      callback: t => { captchaToken = t; }, 'expired-callback': () => { captchaToken = null; },
+    });
+  };
+  document.head.appendChild(s);
+}
+function reiniciarCaptcha() { captchaToken = null; if (captchaId !== null && window.turnstile) window.turnstile.reset(captchaId); }
+
 $('#authForm').addEventListener('submit', async e => {
   e.preventDefault();
   const signup = e.submitter && e.submitter.value === 'signup';
   const email = $('#authEmail').value.trim(), password = $('#authPass').value;
+  if (CFG.turnstileSiteKey && !captchaToken) return showGate('Completa la verificación de seguridad antes de continuar.', 'err');
   showGate(signup ? 'Creando la cuenta…' : 'Entrando…');
+  const opciones = captchaToken ? { captchaToken } : {};
   const { data, error } = signup
-    ? await SB.auth.signUp({ email, password, options: { emailRedirectTo: location.origin + location.pathname } })
-    : await SB.auth.signInWithPassword({ email, password });
-  if (error) return showGate(authError(error), 'err');
+    ? await SB.auth.signUp({ email, password, options: { ...opciones, emailRedirectTo: location.origin + location.pathname } })
+    : await SB.auth.signInWithPassword({ email, password, options: opciones });
+  reiniciarCaptcha();
+  if (error) {
+    if (++fallosAcceso >= 5) {
+      fallosAcceso = 0;
+      $('#authForm').querySelectorAll('button').forEach(b => (b.disabled = true));
+      setTimeout(() => $('#authForm').querySelectorAll('button').forEach(b => (b.disabled = false)), 30e3);
+      return showGate('Demasiados intentos fallidos. Espera 30 segundos y vuelve a intentar.', 'err');
+    }
+    return showGate(authError(error), 'err');
+  }
+  fallosAcceso = 0;
   if (!data.session) return showGate('Cuenta creada. Te enviamos un correo para confirmarla; después vuelve aquí y pulsa «Entrar».', 'ok');
   $('#authPass').value = '';
   await onSignedIn(data.session.user);

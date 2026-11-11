@@ -6,6 +6,7 @@
 // Variables de entorno en Vercel: GEMINI_API_KEY (o ANTHROPIC_API_KEY) y, para guardar, SUPABASE_SERVICE_ROLE_KEY.
 import { bearer, usuario, sbJson, sbFetch, generarJSON, errorHttp, proveedorIA } from '../lib/copiloto.js';
 import { correoConfigurado, crearTransporte, correoHtml } from '../lib/correo.js';
+import { leerCuerpo, escenarioValido, enteroValido, dentroDelLimite, UUID, cabecerasApi } from '../lib/seguridad.js';
 
 export const config = { maxDuration: 60 };
 
@@ -232,30 +233,40 @@ function historial(h) {
   return msgs;
 }
 
+const ACCIONES = ['conversar', 'validar', 'guardar', 'solicitar', 'solicitudes', 'aprobar', 'rechazar'];
+// límites por usuario y hora (rate limiting): la conversación usa la IA; la validación es frecuente pero sin IA
+const LIMITES = { conversar: 60, validar: 600 };
+// columnas que necesita la pestaña de solicitudes: nada más sale de la base
+const COLUMNAS_SOLICITUD = 'id,created_at,email,escenario,semana,fecha_inicio,filas,nota,estado,comentario';
+
 export default async function handler(req, res) {
+  cabecerasApi(res);
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST.' });
   const token = bearer(req);
   const user = await usuario(token);
-  if (!user) return res.status(401).json({ error: 'Inicia sesión para usar el agente de datos.' });
+  if (!user || !UUID.test(user.id)) return res.status(401).json({ error: 'Inicia sesión para usar el agente de datos.' });
 
-  const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-  const escenario = String(body.escenario || 'base').slice(0, 40);
   try {
-    const accion = body.accion;
+    const body = leerCuerpo(req, 256 * 1024);
+    const escenario = escenarioValido(body.escenario);
+    const accion = ACCIONES.includes(body.accion) ? body.accion : 'conversar';
     const esAdmin = async () => (await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []))[0]?.rol === 'admin';
     const necesitaServicio = ['guardar', 'solicitar', 'solicitudes', 'aprobar', 'rechazar'].includes(accion);
-    if (necesitaServicio && !SERVICIO) return res.status(503).json({ error: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Vercel.' });
+    if (necesitaServicio && !SERVICIO) return res.status(503).json({ error: 'El guardado de datos no está configurado por ahora.' });
+    if (LIMITES[accion] && (await dentroDelLimite(user, `agente-${accion}`, LIMITES[accion])) === false) {
+      return res.status(429).json({ error: `Llegaste al límite de ${LIMITES[accion]} mensajes por hora al agente. Intenta más tarde.` });
+    }
 
     // ---- solicitudes: los usuarios piden; el administrador aprueba (se guarda) o rechaza ----
     if (accion === 'solicitudes') {
       const admin = await esAdmin();
       const filtro = admin ? '' : `&user_id=eq.${user.id}`;
-      const lista = await sbJson(`solicitudes_datos?select=*&order=created_at.desc&limit=50${filtro}`, SERVICIO);
+      const lista = await sbJson(`solicitudes_datos?select=${COLUMNAS_SOLICITUD}&order=created_at.desc&limit=50${filtro}`, SERVICIO);
       return res.status(200).json({ admin, solicitudes: lista });
     }
     if (accion === 'aprobar' || accion === 'rechazar') {
       if (!(await esAdmin())) return res.status(403).json({ error: 'Solo un administrador puede revisar solicitudes.' });
-      const id = Number(body.id);
+      const id = enteroValido(body.id, { nombre: 'número de solicitud' });
       const [sol] = await sbJson(`solicitudes_datos?select=*&id=eq.${id}`, SERVICIO);
       if (!sol) return res.status(404).json({ error: 'No encuentro esa solicitud.' });
       if (sol.estado !== 'pendiente') return res.status(409).json({ error: `Esa solicitud ya fue ${sol.estado}.` });
@@ -303,10 +314,10 @@ export default async function handler(req, res) {
     }
 
     // validar: revisa el borrador editado a mano en las tablas, sin llamar a la IA
-    if (body.accion === 'validar') return res.status(200).json({ escenario: ref.nombre, ...validarVarias(listaBorradores(body), ref) });
+    if (accion === 'validar') return res.status(200).json({ escenario: ref.nombre, ...validarVarias(listaBorradores(body), ref) });
 
     // conversar
-    if (!proveedorIA()) return res.status(503).json({ error: 'El agente necesita la IA configurada (GEMINI_API_KEY en Vercel).' });
+    if (!proveedorIA()) return res.status(503).json({ error: 'El agente necesita la IA, que no está configurada por ahora.' });
     const crudo = String(body.mensaje || '').trim();
     if (crudo.length > MAX_MENSAJE) return res.status(400).json({ error: `El mensaje es muy largo (máximo ${MAX_MENSAJE} caracteres). Envíalo por partes.` });
     const anteriores = listaBorradores(body);

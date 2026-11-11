@@ -69,8 +69,9 @@
           <input id="authEmail" type="email" autocomplete="username" required>
         </label>
         <label class="gate-field">Contraseña
-          <input id="authPass" type="password" autocomplete="current-password" minlength="6" required>
+          <input id="authPass" type="password" autocomplete="current-password" minlength="6" maxlength="72" required>
         </label>
+        <div id="captcha" class="captcha" hidden></div>
         <div class="row-actions">
           <button class="btn primary" type="submit" value="login">Entrar</button>
           <button class="btn" type="submit" value="signup">Crear cuenta</button>
@@ -259,8 +260,10 @@
     Asistente con IA (Gemini) que responde solo con los datos del escenario; si la IA no está disponible, responde un motor de reglas. Escenarios simulados: no son resultados reales.
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js"></script>
+  <!-- librerías externas con versión fija e integridad verificada (SRI): si el archivo cambia, el navegador no lo ejecuta.
+       SheetJS 0.20.3 corrige las vulnerabilidades de la 0.18.5 al leer archivos (contaminación de prototipos y ReDoS). -->
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js" integrity="sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.47.10/dist/umd/supabase.js" integrity="sha384-8ljL080xacUYrqBXUJRcP68fd1dVCh9qK/xi9QMzxUgOVNycXp0s6mBZAjBMp9W0" crossorigin="anonymous"></script>
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

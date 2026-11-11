@@ -7,6 +7,11 @@ window.COPILOTO_CONFIG = {
   supabaseUrl: 'https://xubnplutpfkxkzwuebpg.supabase.co',
   supabaseAnonKey: 'sb_publishable_1rvoYKrN8nQFferis-y9xw_bt6B9J42',
 
+  // Protección contra bots (opcional): clave del sitio de Cloudflare Turnstile. Es pública por diseño.
+  // Para activarla, crea el sitio en Cloudflare Turnstile, pega aquí la «site key» y, en Supabase →
+  // Authentication → Attack Protection, activa «CAPTCHA protection» con Turnstile y la «secret key».
+  turnstileSiteKey: '',
+
   // Escenarios cuando no hay base de datos (con Supabase se leen de la tabla «escenarios»).
   escenarios: [
     { id: 'base', nombre: 'Base', archivo: 'data/kpis_marketing.xlsx' },

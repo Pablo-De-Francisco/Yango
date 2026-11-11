@@ -5,25 +5,29 @@
 // SMTP_USER y SMTP_PASS (p. ej. Gmail + contraseña de aplicación); opcionales SMTP_HOST, SMTP_PORT, RESUMEN_ESCENARIO, APP_URL.
 import { bearer, usuario, sbJson, sbFetch, contexto, generar, errorHttp, proveedorIA } from '../lib/copiloto.js';
 import { crearTransporte, correoHtml, explicarFallo } from '../lib/correo.js';
+import { mismoSecreto, UUID, cabecerasApi } from '../lib/seguridad.js';
 
 export const config = { maxDuration: 60 };
 
 // Vercel Cron envía «Authorization: Bearer <CRON_SECRET>»; desde la app, solo una cuenta admin.
 async function autorizado(req) {
   const token = bearer(req);
-  if (process.env.CRON_SECRET && token === process.env.CRON_SECRET) return 'cron';
+  if (process.env.CRON_SECRET && mismoSecreto(token, process.env.CRON_SECRET)) return 'cron';
   const user = await usuario(token);
-  if (!user) return null;
+  if (!user || !UUID.test(user.id)) return null;
   const perfil = await sbJson(`perfiles?select=rol&id=eq.${user.id}`, { token }).catch(() => []);
   return perfil[0]?.rol === 'admin' ? 'admin' : null;
 }
 
 export default async function handler(req, res) {
+  cabecerasApi(res);
+  if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ error: 'Método no permitido.' });
   const quien = await autorizado(req);
   if (!quien) return res.status(401).json({ error: 'No autorizado: solo la tarea programada o un administrador pueden enviar el resumen.' });
 
   const faltan = ['SUPABASE_SERVICE_ROLE_KEY', 'SMTP_USER', 'SMTP_PASS'].filter(k => !process.env[k]);
   if (!proveedorIA()) faltan.unshift('GEMINI_API_KEY');
+  // aquí ya solo llegan la tarea programada o un administrador: el detalle les sirve para configurar
   if (faltan.length) return res.status(503).json({ error: `Falta configurar en Vercel: ${faltan.join(', ')}.` });
 
   const servicio = { apikey: process.env.SUPABASE_SERVICE_ROLE_KEY, token: process.env.SUPABASE_SERVICE_ROLE_KEY };

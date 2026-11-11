@@ -68,6 +68,36 @@ Opcionales: `RESUMEN_ESCENARIO` (por defecto `base`), `SMTP_HOST` / `SMTP_PORT` 
 
 Los correos se generan automáticamente con IA, sin revisión previa: llevan un aviso para revisarlos antes de decidir.
 
+## Seguridad
+
+Ejecuta una vez `supabase/seguridad.sql` en el SQL Editor (también está al final de `schema.sql`). Estado de cada control:
+
+| # | Control | Cómo se cumple |
+|---|---|---|
+| 1 | Secretos fuera de Git | El historial no tiene claves. `.gitignore` excluye `.env*`, `*.pem`, `*.key`. Las claves secretas solo viven en Vercel → Environment Variables |
+| 2 | Key pública para la DB | `config.js` usa la clave *publishable*; la *secret* solo la usan las funciones del servidor |
+| 3 | Row-Level Security | RLS activo en todas las tablas; sin sesión no se lee nada; `solicitudes_datos` y `uso_api` no tienen políticas (solo el servidor) |
+| 4 | Datos sensibles cifrados | Supabase cifra en reposo (AES-256) y en tránsito (TLS); las claves van cifradas en Vercel. En el registro, el correo del destinatario se guarda oculto (`pa…@gmail.com`) |
+| 5 | Autenticación obligatoria | Todas las funciones de `api/` exigen sesión válida; el envío semanal, el secreto de Vercel Cron (comparado en tiempo constante) o un administrador |
+| 6 | Acceso restringido a registros | Cada usuario ve solo sus consultas; el administrador, todas |
+| 7 | Campos protegidos | Permisos por columna: el navegador no puede fijar `id`, `created_at` ni `user_id` en `log_ia`, ni el rol en `perfiles` |
+| 8 | Sesión | Supabase Auth guarda la sesión en el navegador (no hay cookies propias); la CSP reduce el riesgo de robo por XSS |
+| 9 | Contraseñas con hash | Las gestiona Supabase Auth (bcrypt); la app nunca las guarda |
+| 10 | Rate limiting | En el servidor, con la tabla `uso_api`: 40 consultas al asistente, 60 mensajes al agente y 10 correos por usuario y hora |
+| 11 | Protección contra bots | CAPTCHA de Cloudflare Turnstile opcional (`turnstileSiteKey` en `config.js` + Supabase → Attack Protection) y espera de 30 s tras 5 intentos fallidos |
+| 12 | Consultas parametrizadas | Todo valor que entra a una consulta se valida (escenario, número, UUID) o se codifica; PostgREST no ejecuta SQL libre |
+| 13 | Validación de entradas | Cuerpo JSON con tamaño máximo, acción permitida, correo de un solo destinatario sin saltos de línea, reglas fijas para los datos |
+| 14 | Contenido sanitizado | Todo lo que se muestra o se envía por correo se escapa (también el asunto del correo) |
+| 15 | Archivos restringidos | Solo `.xlsx`/`.xls` de hasta 5 MB, leídos en el navegador con SheetJS 0.20.3 (sin las vulnerabilidades de la 0.18.5) |
+| 16 | Solo los datos necesarios | Las respuestas traen las columnas que usa la app y los errores no muestran tablas ni consultas |
+| 17 | Security headers | `vercel.json`: CSP, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy` |
+| 18 | HTTPS | Vercel redirige a HTTPS y HSTS obliga a usarlo |
+| 19 | Dependencias | `npm audit` sin vulnerabilidades; nodemailer 10.5.0; librerías del navegador con versión fija e integridad (SRI) |
+
+Si cambias el script del `<head>` de `index.html`, actualiza su hash `sha256-…` en la CSP de `vercel.json` o el navegador lo bloqueará.
+
+Recomendado en el panel de Supabase (Authentication): exigir contraseñas de al menos 8 caracteres, activar la protección contra contraseñas filtradas, activar CAPTCHA y, para una demo cerrada, desactivar el registro abierto.
+
 ## Tablas
 
 | Tabla | Contenido |
@@ -99,12 +129,14 @@ app.js                lectura de datos (Supabase o Excel), métricas, briefing, 
 api/asistente.js      asistente IA (Claude) — función de servidor de Vercel
 api/resumen-semanal.js  envío semanal del briefing por correo (Vercel Cron)
 lib/copiloto.js       lógica compartida de las funciones (datos, métricas, Claude)
+lib/seguridad.js      validación de entradas, rate limiting y cabeceras de la API
 package.json          dependencias de las funciones (SDK de Anthropic, nodemailer)
 config.js             conexión a Supabase y lista de escenarios
 data/*.xlsx           un Excel por escenario (respaldo sin base de datos)
 supabase/schema.sql   tablas y seguridad (RLS)
 supabase/seed.sql     datos iniciales de los cuatro escenarios
-vercel.json           sin caché para los Excel
+supabase/seguridad.sql  permisos por columna y tabla de uso (rate limiting)
+vercel.json           cabeceras de seguridad (CSP, HSTS…), sin caché para los Excel y tarea semanal
 ```
 
 Sitio estático: no necesita compilación. En local basta con servir la carpeta (por ejemplo `npx serve .`).

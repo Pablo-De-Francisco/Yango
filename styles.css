@@ -324,3 +324,6 @@ html.mobile .start-card { padding: 16px; }
 .chat-input textarea { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 16px; padding: 10px 16px; font: inherit; line-height: 1.4; resize: vertical; max-height: 240px; }
 html.mobile .chat-input textarea { font-size: 16px; resize: none; }
 html.mobile .week-card { padding: 10px; }
+
+/* verificación contra bots en el acceso */
+.captcha { margin-top: 12px; min-height: 65px; }
