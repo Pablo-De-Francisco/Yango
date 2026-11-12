@@ -52,6 +52,7 @@
         </label>
         <button class="btn" id="homeBtn" type="button">Menú de inicio</button>
         <button class="btn ghost" id="tourBtn" type="button" title="Ver de nuevo el recorrido por la herramienta">Tutorial</button>
+        <button class="btn ghost" id="videoBtn" type="button" title="Ver el video tutorial (2 min 39 s)">Video tutorial</button>
         <label class="btn primary" for="fileInput">Cargar mi Excel</label>
         <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
         <a class="btn" href="data/kpis_marketing.xlsx" download>Descargar Excel base</a>
@@ -87,7 +88,7 @@
   <!-- Menú de inicio: se muestra al entrar y se vuelve a abrir con el botón «Menú de inicio» -->
   <section class="start-menu" id="startMenu" hidden>
     <h2>¿Cómo quieres empezar?</h2>
-    <p class="note">Elige una opción. Podrás volver a este menú cuando quieras. <button class="link-btn" id="tourBtnInicio" type="button">¿Primera vez? Ver el tutorial</button></p>
+    <p class="note">Elige una opción. Podrás volver a este menú cuando quieras. <button class="link-btn" id="tourBtnInicio" type="button">¿Primera vez? Ver el tutorial</button> · <button class="link-btn" id="videoBtnInicio" type="button">Ver el video</button></p>
     <div class="start-grid">
       <article class="win start-card">
         <div class="start-ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13l6 5M15 13l-6 5"/></svg></div>
@@ -277,6 +278,24 @@
             <button class="btn" type="button" id="tourAtras">Atrás</button>
             <button class="btn primary" type="button" id="tourSig">Siguiente</button>
           </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Video tutorial: se ofrece (opcional) cada vez que se inicia sesión y se abre con el botón «Video tutorial» -->
+  <div class="video-modal" id="videoModal" hidden role="dialog" aria-modal="true" aria-labelledby="videoTitulo">
+    <div class="win video-card">
+      <div class="win-bar"><i></i><i></i><i></i><span id="videoTitulo">Video tutorial · 2 min 39 s</span><button class="video-cerrar" type="button" id="videoCerrar" aria-label="Cerrar el video">×</button></div>
+      <div class="win-body">
+        <p class="video-oferta" id="videoOferta">¿Quieres ver en un video corto cómo funciona el Copiloto? Es opcional: puedes verlo después con el botón «Video tutorial».</p>
+        <div class="video-marco">
+          <video id="videoTutorial" controls playsinline preload="none" poster="media/tutorial.jpg"></video>
+          <button class="video-play" type="button" id="videoPlay" aria-label="Reproducir el video tutorial"><svg viewBox="0 0 24 24" width="34" height="34" aria-hidden="true"><path d="M8 5v14l11-7Z" fill="currentColor"/></svg></button>
+        </div>
+        <div class="row-actions" id="videoAcciones">
+          <button class="btn primary" type="button" id="videoVer">Ver video</button>
+          <button class="btn" type="button" id="videoNo">Ahora no</button>
         </div>
       </div>
     </div>

@@ -1160,6 +1160,51 @@ document.addEventListener('keydown', e => {
     else if (!e.shiftKey && k === f.length - 1) { e.preventDefault(); f[0].focus(); }
   }
 });
+// ---------- video tutorial ----------
+// Se ofrece (opcional) en cada inicio de sesión: al entrar con el formulario o al abrir la app en una sesión nueva del navegador.
+const video = { abierto: false, visto: false, foco: null, alCerrar: null };
+const videoClave = () => 'yango_video_ofrecido_' + (state.user?.id || 'anon');
+function videoToca() {
+  if (state.recienEntro) return true;
+  try { return !sessionStorage.getItem(videoClave()); } catch { return false; }
+}
+function abrirVideo(oferta = false, alCerrar = null) {
+  if (video.abierto) return;
+  try { sessionStorage.setItem(videoClave(), '1'); } catch { /* sin almacenamiento */ }
+  Object.assign(video, { abierto: true, visto: false, foco: document.activeElement, alCerrar });
+  $('#videoOferta').hidden = !oferta;
+  $('#videoAcciones').hidden = !oferta;
+  $('#videoPlay').hidden = false;
+  $('#videoModal').hidden = false;
+  (oferta ? $('#videoVer') : $('#videoPlay')).focus();
+}
+function reproducirVideo() {
+  const v = $('#videoTutorial');
+  if (!v.getAttribute('src')) v.src = 'media/tutorial.mp4';
+  $('#videoOferta').hidden = $('#videoAcciones').hidden = $('#videoPlay').hidden = true;
+  video.visto = true;
+  tourMarcar();  // ver el video cuenta como haber visto el tutorial
+  v.play().catch(() => { /* el navegador puede pedir pulsar play */ });
+  v.focus();
+}
+function cerrarVideo() {
+  if (!video.abierto) return;
+  video.abierto = false;
+  const v = $('#videoTutorial'); v.pause();
+  $('#videoModal').hidden = true;
+  video.foco?.focus?.();
+  const f = video.alCerrar; video.alCerrar = null;
+  if (f) f(video.visto);
+}
+$('#videoBtn').addEventListener('click', () => { abrirVideo(false); reproducirVideo(); });
+$('#videoBtnInicio').addEventListener('click', () => { abrirVideo(false); reproducirVideo(); });
+$('#videoVer').addEventListener('click', reproducirVideo);
+$('#videoPlay').addEventListener('click', reproducirVideo);
+$('#videoNo').addEventListener('click', cerrarVideo);
+$('#videoCerrar').addEventListener('click', cerrarVideo);
+$('#videoModal').addEventListener('click', e => { if (e.target === e.currentTarget) cerrarVideo(); });
+document.addEventListener('keydown', e => { if (video.abierto && e.key === 'Escape') { e.preventDefault(); cerrarVideo(); } });
+
 addEventListener('resize', ubicarTour);
 addEventListener('scroll', ubicarTour, { passive: true });
 
@@ -1218,7 +1263,10 @@ async function startApp() {
     else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
   })();
   await state.ready;
-  if (tourToca()) abrirTour();
+  // al iniciar sesión se ofrece el video; si no se ve y toca el recorrido de cada 5 días, sale el recorrido
+  if (videoToca()) abrirVideo(true, visto => { if (!visto && tourToca()) abrirTour(); });
+  else if (tourToca()) abrirTour();
+  state.recienEntro = false;
   await loadLog();
 }
 function showGate(msg = '', cls = '') {
@@ -1330,6 +1378,7 @@ $('#authForm').addEventListener('submit', async e => {
   fallosAcceso = 0;
   if (!data.session) return showGate('Cuenta creada. Te enviamos un correo para confirmarla; después vuelve aquí y pulsa «Entrar».', 'ok');
   $('#authPass').value = '';
+  state.recienEntro = true;  // inicio de sesión con el formulario: se ofrece el video tutorial
   await onSignedIn(data.session.user);
 });
 $('#logoutBtn').addEventListener('click', async () => { await SB.auth.signOut(); location.reload(); });
