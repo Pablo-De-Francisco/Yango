@@ -1059,6 +1059,110 @@ $('#startExplore').addEventListener('click', async () => {
   }
 });
 
+// ---------- tutorial guiado ----------
+// Aparece solo al entrar si pasaron 5 días desde la última vez (visto o saltado), por usuario y navegador.
+const TOUR_DIAS = 5;
+const TOUR = [
+  { t: 'Bienvenido al Copiloto de Marketing IA', x: 'En un minuto te mostramos cómo funciona: cargar los datos, ver los KPIs, generar el briefing semanal y preguntarle al asistente. Puedes saltarlo cuando quieras.' },
+  { sel: '#startMenu .start-grid', inicio: true, t: 'Elige cómo cargar los datos', x: 'Sube tu propio Excel a partir de la plantilla base, dale las cifras al agente de datos o explora la herramienta con datos simulados.' },
+  { sel: '.source-actions', t: 'Escenario, semana y archivos', x: 'Aquí cambias de escenario y de semana, vuelves al menú de inicio, cargas tu Excel o descargas la plantilla base.' },
+  { sel: '.tabs button[data-tab="kpis"]', tab: 'kpis', t: '1 · Hoja de KPIs', x: 'Inversión, conversiones, ingresos, ROAS y CPA por canal, con la tendencia semanal, el plan vs. real y el diccionario de cada KPI. El ROAS sale en rojo si está bajo la meta.' },
+  { sel: '.tabs button[data-tab="agente"]', tab: 'agente', t: '2 · Agente de datos', x: 'Escríbele las cifras como quieras, incluso un párrafo con varias semanas: arma una tabla por semana, la valida y la guardas (o la envías al administrador para que la apruebe).' },
+  { sel: '.tabs button[data-tab="briefing"]', tab: 'briefing', t: '3 · Briefing semanal IA', x: 'La IA redacta qué cambió, por qué y qué decidir. Tú lo revisas, lo apruebas y lo envías por correo a la dirección.' },
+  { sel: '.tabs button[data-tab="chat"]', tab: 'chat', t: '4 · Asistente de preguntas', x: 'Pregunta en lenguaje natural, por ejemplo «¿qué canal tuvo peor ROAS?». Responde solo con los datos y cita la fuente. Cada 5 consultas te pedirá confirmar que no eres un robot.' },
+  { sel: '.tabs button[data-tab="log"]', tab: 'log', t: '5 · Registro (log_ia)', x: 'Cada briefing y cada pregunta quedan guardados con el usuario que los hizo, para revisar cómo se usa la IA.' },
+  { sel: '#modeBtn', t: 'Modo celular o escritorio', x: 'Cambia la vista según tu pantalla. Para ver este tutorial de nuevo, usa el botón «Tutorial».' },
+  { t: '¡Listo!', x: 'Ya puedes empezar. Este recorrido volverá a aparecer en 5 días; puedes saltarlo siempre que quieras.' },
+];
+const tour = { i: 0, abierto: false, volverInicio: false, tabAntes: 'kpis', foco: null };
+const tourClave = () => 'yango_tutorial_' + (state.user?.id || 'anon');
+function tourMarcar() { try { localStorage.setItem(tourClave(), String(Date.now())); } catch { /* sin almacenamiento */ } }
+function tourToca() {
+  let ult = 0;
+  try { ult = +localStorage.getItem(tourClave()) || 0; } catch { return false; }  // sin almacenamiento: no insistir
+  return Date.now() - ult >= TOUR_DIAS * 864e5;
+}
+function abrirTour() {
+  if (tour.abierto) return;
+  tour.abierto = true; tour.i = 0;
+  tour.volverInicio = !$('#startMenu').hidden;
+  tour.tabAntes = document.querySelector('.tabs button.active')?.dataset.tab || 'kpis';
+  tour.foco = document.activeElement;
+  $('#tourPuntos').innerHTML = TOUR.map(() => '<i></i>').join('');
+  $('#tour').hidden = false;
+  document.body.classList.add('en-tour');
+  pasoTour();
+}
+function cerrarTour() {
+  if (!tour.abierto) return;
+  tour.abierto = false;
+  tourMarcar();
+  $('#tour').hidden = true;
+  document.body.classList.remove('en-tour');
+  if (tour.volverInicio) openStartMenu();
+  else document.querySelector(`.tabs button[data-tab="${tour.tabAntes}"]`)?.click();
+  tour.foco?.focus?.();
+}
+function pasoTour() {
+  const p = TOUR[tour.i];
+  // los pasos del menú de inicio se ven con el menú abierto; los demás, con la herramienta
+  if (p.inicio) openStartMenu();
+  else if (p.sel) closeStartMenu(p.tab || 'kpis');
+  if (p.tab) document.querySelector(`.tabs button[data-tab="${p.tab}"]`).click();
+  $('#tourPaso').textContent = `Paso ${tour.i + 1} de ${TOUR.length}`;
+  $('#tourTitulo').textContent = p.t;
+  $('#tourTexto').textContent = p.x;
+  $('#tourAtras').disabled = tour.i === 0;
+  $('#tourSig').textContent = tour.i === TOUR.length - 1 ? 'Terminar' : 'Siguiente';
+  $('#tourSaltar').hidden = tour.i === TOUR.length - 1;
+  [...$('#tourPuntos').children].forEach((d, k) => d.classList.toggle('on', k === tour.i));
+  const el = p.sel && document.querySelector(p.sel);
+  if (el && el.getClientRects().length) el.scrollIntoView({ block: 'center', inline: 'nearest' });
+  requestAnimationFrame(() => { ubicarTour(); $('#tourSig').focus(); });
+}
+function ubicarTour() {
+  if (!tour.abierto) return;
+  const p = TOUR[tour.i], luz = $('#tourLuz'), card = $('#tourCard');
+  const el = p.sel && document.querySelector(p.sel);
+  const r = el && el.getClientRects().length ? el.getBoundingClientRect() : null;
+  card.style.left = card.style.top = '';
+  if (!r || r.width === 0) {  // sin elemento visible: tarjeta al centro
+    luz.classList.add('vacio'); card.classList.add('centro'); return;
+  }
+  card.classList.remove('centro');
+  const m = 6;
+  luz.classList.remove('vacio');
+  Object.assign(luz.style, { left: `${r.left - m}px`, top: `${r.top - m}px`, width: `${r.width + 2 * m}px`, height: `${r.height + 2 * m}px` });
+  // en celular la tarjeta va abajo, o arriba si lo resaltado está en la mitad inferior (p. ej. la barra de pestañas)
+  card.classList.toggle('arriba', r.top + r.height / 2 > innerHeight / 2);
+  if (document.documentElement.classList.contains('mobile') || innerWidth < 600) return;
+  const cw = card.offsetWidth, ch = card.offsetHeight, gap = 14;
+  let top = r.bottom + gap;
+  if (top + ch > innerHeight - 8) top = r.top - gap - ch;
+  if (top < 8) top = Math.max(8, innerHeight - ch - 8);
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - cw / 2), innerWidth - cw - 8);
+  card.style.left = `${left}px`; card.style.top = `${top}px`;
+}
+$('#tourSig').addEventListener('click', () => { if (tour.i >= TOUR.length - 1) cerrarTour(); else { tour.i++; pasoTour(); } });
+$('#tourAtras').addEventListener('click', () => { if (tour.i > 0) { tour.i--; pasoTour(); } });
+$('#tourSaltar').addEventListener('click', cerrarTour);
+$('#tourBtn').addEventListener('click', abrirTour);
+$('#tourBtnInicio').addEventListener('click', abrirTour);
+document.addEventListener('keydown', e => {
+  if (!tour.abierto) return;
+  if (e.key === 'Escape') { e.preventDefault(); cerrarTour(); }
+  else if (e.key === 'ArrowRight') $('#tourSig').click();
+  else if (e.key === 'ArrowLeft') $('#tourAtras').click();
+  else if (e.key === 'Tab') {  // el foco no sale de la tarjeta
+    const f = [...$('#tourCard').querySelectorAll('button:not([disabled]):not([hidden])')];
+    const k = f.indexOf(document.activeElement);
+    if (e.shiftKey && k <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+    else if (!e.shiftKey && k === f.length - 1) { e.preventDefault(); f[0].focus(); }
+  }
+});
+addEventListener('resize', ubicarTour);
+addEventListener('scroll', ubicarTour, { passive: true });
+
 // ---------- modo celular / escritorio (el modo inicial lo pone el script del <head> de index.html) ----------
 function renderModeBtn() {
   const mobile = document.documentElement.classList.contains('mobile');
@@ -1114,6 +1218,7 @@ async function startApp() {
     else renderAlerts([['err', 'No se pudo cargar la librería de Excel (SheetJS). Revisa tu conexión a internet.']]);
   })();
   await state.ready;
+  if (tourToca()) abrirTour();
   await loadLog();
 }
 function showGate(msg = '', cls = '') {

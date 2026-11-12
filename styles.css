@@ -331,3 +331,26 @@ html.mobile .week-card { padding: 10px; }
 .captcha-modal[hidden] { display: none; }
 .captcha-card { width: min(100%, 420px); }
 .captcha-card p { margin: 0 0 8px; font-size: 14px; }
+
+/* ---------- tutorial guiado ---------- */
+.link-btn { background: none; border: 0; padding: 0; margin-left: 4px; color: var(--red); font: inherit; font-weight: 600; cursor: pointer; text-decoration: underline; }
+.tour { position: fixed; inset: 0; z-index: 60; }
+.tour[hidden] { display: none; }
+.tour-luz { position: fixed; border-radius: 12px; box-shadow: 0 0 0 3px var(--red), 0 0 0 9999px rgba(0, 0, 0, .55); transition: left .25s, top .25s, width .25s, height .25s; pointer-events: none; }
+.tour-luz.vacio { left: 50% !important; top: 50% !important; width: 0 !important; height: 0 !important; box-shadow: 0 0 0 9999px rgba(0, 0, 0, .55); }
+.tour-card { position: fixed; width: min(380px, calc(100vw - 32px)); box-shadow: 0 12px 32px rgba(0, 0, 0, .25); }
+.tour-card.centro { left: 50% !important; top: 50% !important; transform: translate(-50%, -50%); }
+.tour-card h3 { margin: 2px 0 6px; font-size: 18px; }
+.tour-card p { margin: 0; font-size: 14px; line-height: 1.5; }
+.tour-paso { color: var(--red) !important; font-size: 12px !important; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
+.tour-puntos { display: flex; gap: 6px; margin: 14px 0 12px; }
+.tour-puntos i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.tour-puntos i.on { background: var(--red); width: 18px; border-radius: 4px; }
+.tour-acciones { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tour-nav { display: flex; gap: 8px; margin-left: auto; }
+.tour-acciones .btn[disabled] { opacity: .4; cursor: default; }
+.tour-acciones .btn[hidden] { display: none; }
+html.mobile .tour-card:not(.centro) { left: 16px !important; right: 16px; top: auto !important; bottom: 16px; width: auto; }
+html.mobile .tour-card.arriba:not(.centro) { top: 16px !important; bottom: auto; }
+@media (max-width: 599px) { .tour-card:not(.centro) { left: 16px !important; right: 16px; top: auto !important; bottom: 16px; width: auto; } .tour-card.arriba:not(.centro) { top: 16px !important; bottom: auto; } }
+@media (prefers-reduced-motion: reduce) { .tour-luz { transition: none; } }

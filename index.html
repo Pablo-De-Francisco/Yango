@@ -51,6 +51,7 @@
           <select id="weekSel" aria-label="Semana"></select>
         </label>
         <button class="btn" id="homeBtn" type="button">Menú de inicio</button>
+        <button class="btn ghost" id="tourBtn" type="button" title="Ver de nuevo el recorrido por la herramienta">Tutorial</button>
         <label class="btn primary" for="fileInput">Cargar mi Excel</label>
         <input id="fileInput" type="file" accept=".xlsx,.xls" hidden>
         <a class="btn" href="data/kpis_marketing.xlsx" download>Descargar Excel base</a>
@@ -86,7 +87,7 @@
   <!-- Menú de inicio: se muestra al entrar y se vuelve a abrir con el botón «Menú de inicio» -->
   <section class="start-menu" id="startMenu" hidden>
     <h2>¿Cómo quieres empezar?</h2>
-    <p class="note">Elige una opción. Podrás volver a este menú cuando quieras.</p>
+    <p class="note">Elige una opción. Podrás volver a este menú cuando quieras. <button class="link-btn" id="tourBtnInicio" type="button">¿Primera vez? Ver el tutorial</button></p>
     <div class="start-grid">
       <article class="win start-card">
         <div class="start-ico"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13l6 5M15 13l-6 5"/></svg></div>
@@ -261,6 +262,26 @@
   </footer>
 
   <!-- verificación de seguridad que pide el servidor cada 5 consultas a la IA -->
+  <!-- Tutorial guiado: aparece al entrar cada 5 días; se puede saltar y volver a ver con el botón «Tutorial» -->
+  <div class="tour" id="tour" hidden>
+    <div class="tour-luz" id="tourLuz"></div>
+    <div class="tour-card win" id="tourCard" role="dialog" aria-modal="true" aria-labelledby="tourTitulo" aria-describedby="tourTexto">
+      <div class="win-body">
+        <p class="tour-paso" id="tourPaso"></p>
+        <h3 id="tourTitulo"></h3>
+        <p id="tourTexto"></p>
+        <div class="tour-puntos" id="tourPuntos" aria-hidden="true"></div>
+        <div class="tour-acciones">
+          <button class="btn ghost" type="button" id="tourSaltar">Saltar tutorial</button>
+          <span class="tour-nav">
+            <button class="btn" type="button" id="tourAtras">Atrás</button>
+            <button class="btn primary" type="button" id="tourSig">Siguiente</button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="captcha-modal" id="captchaModal" hidden role="dialog" aria-modal="true" aria-labelledby="captchaModalTitulo">
     <div class="win captcha-card">
       <div class="win-bar"><i></i><i></i><i></i><span id="captchaModalTitulo">Verificación de seguridad</span></div>
