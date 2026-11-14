@@ -41,7 +41,9 @@ export default async function handler(req, res) {
       return res.status(429).json({ error: `Llegaste al límite de ${MAX_POR_HORA} consultas por hora. Intenta más tarde.` });
     }
     const ctx = await contexto(escenario, body.semana, { token });
-    const r = await generar({ modo, pregunta, historial: body.historial, ctx });
+    // indicación opcional para el briefing (por ejemplo, dictada por voz: «enfócate en Meta Ads»)
+    const indicacion = modo === 'resumen' ? String(body.indicacion || '').replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+    const r = await generar({ modo, pregunta, historial: body.historial, ctx, indicacion });
     return res.status(200).json({ texto: r.texto, modelo: r.modelo, truncada: !!r.truncada, semana: ctx.semana, escenario: ctx.nombre });
   } catch (error) {
     return errorHttp(res, error);

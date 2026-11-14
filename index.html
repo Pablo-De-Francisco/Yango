@@ -181,6 +181,7 @@
             <button class="btn" id="regenBtn">Regenerar</button>
             <button class="btn" id="sendNowBtn" hidden>Enviar resumen semanal ahora</button>
             <button class="btn" id="copyBtn">Copiar texto</button>
+            <button class="btn" id="briefMic" type="button" data-ayuda="Dicta una indicación y se genera el resumen con IA (por ejemplo: enfócate en Meta Ads)" data-tlisto="🎤 Indicación por voz" data-tgrabando="⏹ Terminar y generar" data-tprocesando="Transcribiendo…" hidden>🎤 Indicación por voz</button>
             <button class="btn" id="briefVozBtn" type="button" title="Escuchar el briefing con la voz del briefing" hidden>🔊 Escuchar</button>
             <button class="btn primary" id="approveBtn">Aprobar y registrar</button>
           </div>
@@ -197,6 +198,7 @@
         <div class="chips" id="chips"></div>
         <form class="chat-input" id="chatForm" autocomplete="off">
           <input id="chatInput" type="text" placeholder="Escribe tu pregunta…" aria-label="Pregunta">
+          <button type="button" class="mic-btn" id="chatMic" data-ayuda="Hacer la pregunta por voz" aria-label="Hacer la pregunta por voz" hidden>🎤</button>
           <button type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
         </form>
       </div>
@@ -210,6 +212,7 @@
           <div class="win-body chat-body" id="agentLog"></div>
           <form class="chat-input" id="agentForm" autocomplete="off">
             <textarea id="agentInput" rows="2" maxlength="8000" placeholder="Escribe o pega los datos. Ejemplo: Semana 44: Google Ads invirtió 12 mil… Semana 45: …" aria-label="Mensaje al agente"></textarea>
+            <button type="button" class="mic-btn" id="agentMic" data-ayuda="Dictar los datos por voz" aria-label="Dictar los datos por voz" hidden>🎤</button>
             <button type="submit" aria-label="Enviar"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
           </form>
         </div>

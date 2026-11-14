@@ -513,16 +513,19 @@ function renderBriefing() {
   $('#briefFoot').textContent = `Resumen generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
   $('#aiBriefBtn').hidden = !aiAvailable();
   $('#briefVozBtn').hidden = !aiAvailable();
+  ['#briefMic', '#chatMic', '#agentMic'].forEach(id => ($(id).hidden = !aiAvailable()));
   $('#sendNowBtn').hidden = !(aiAvailable() && state.isAdmin);
 }
-async function renderAIBriefing() {
+async function renderAIBriefing(indicacion = '', { porVoz = false } = {}) {
+  if (typeof indicacion !== 'string') indicacion = '';  // clic en el botón: sin indicación
   const btn = $('#aiBriefBtn');
   btn.disabled = true; btn.textContent = 'Generando resumen…';
   try {
-    const r = await askAI('resumen');
+    const r = await askAI('resumen', '', indicacion ? { indicacion } : {});
     $('#briefing').innerHTML = aiToHtml(r.texto);
     currentBrief = { ...currentBrief, decision: '' };
-    $('#briefFoot').textContent = `Resumen generado con IA desde los datos del escenario ${r.escenario}, semana ${r.semana} · pendiente de revisión por: analista de marketing`;
+    $('#briefFoot').textContent = `Resumen generado con IA desde los datos del escenario ${r.escenario}, semana ${r.semana}${indicacion ? ` · indicación: «${indicacion}»` : ''} · pendiente de revisión por: analista de marketing`;
+    if (porVoz) hablar(briefToText(), 'briefing', $('#briefVozBtn'));
   } catch (e) {
     $('#briefFoot').textContent = `No se pudo generar el resumen con IA: ${e.message}`;
   } finally {
@@ -628,6 +631,69 @@ function conVoz(el, rol, texto) {
   return el;
 }
 
+// ---------- dictado por voz (micrófono → /api/escuchar, transcripción con Gemini) ----------
+// Un clic empieza a grabar, otro clic termina (o se corta solo al minuto). El texto transcrito se usa como pregunta
+// al asistente, como mensaje al agente o como indicación del briefing, y la respuesta se lee en voz alta.
+const ESCUCHAR_URL = CFG.escuchar || 'api/escuchar';
+const mic = { rec: null, boton: null, tope: null };
+const tipoGrabacion = () => ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'].find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+const ETIQUETA_MIC = { listo: '🎤', grabando: '⏹', procesando: '…' };
+function marcarMic(b, estado) {
+  b.dataset.estado = estado;
+  b.textContent = b.dataset['t' + estado] || ETIQUETA_MIC[estado];
+  b.setAttribute('aria-pressed', String(estado === 'grabando'));
+  b.title = estado === 'grabando' ? 'Grabando… pulsa para terminar' : estado === 'procesando' ? 'Transcribiendo…' : b.dataset.ayuda || 'Dictar por voz';
+}
+const aBase64 = blob => new Promise((ok, mal) => { const f = new FileReader(); f.onload = () => ok(String(f.result).split(',')[1] || ''); f.onerror = mal; f.readAsDataURL(blob); });
+async function transcribirVoz(blob) {
+  const session = (await SB.auth.getSession()).data.session;
+  const r = await fetch(ESCUCHAR_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+    body: JSON.stringify({ mime: blob.type || 'audio/webm', audio: await aBase64(blob) }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `error ${r.status}`);
+  return (data.texto || '').trim();
+}
+async function grabar(boton, destino) {
+  if (mic.rec) { if (mic.boton === boton && mic.rec.state === 'recording') mic.rec.stop(); return; }
+  pararVoz();
+  // se habilita el audio ahora (con el clic) para poder leer la respuesta al final
+  try { voz.ctx ||= new (window.AudioContext || window.webkitAudioContext)(); voz.ctx.resume(); } catch { /* sin Web Audio */ }
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) return renderAlerts([['err', 'Este navegador no permite grabar audio. Prueba con Chrome, Edge o Safari actualizados.']]);
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
+  catch (e) { return renderAlerts([['err', e.name === 'NotAllowedError' ? 'Permite el uso del micrófono en tu navegador para dictar por voz.' : 'No se encontró un micrófono disponible.']]); }
+  const tipo = tipoGrabacion(), partes = [];
+  let rec;
+  try { rec = new MediaRecorder(stream, tipo ? { mimeType: tipo, audioBitsPerSecond: 32000 } : undefined); }
+  catch { stream.getTracks().forEach(t => t.stop()); return renderAlerts([['err', 'No se pudo iniciar la grabación en este navegador.']]); }
+  Object.assign(mic, { rec, boton });
+  rec.ondataavailable = e => { if (e.data.size) partes.push(e.data); };
+  rec.onstop = async () => {
+    clearTimeout(mic.tope);
+    stream.getTracks().forEach(t => t.stop());
+    Object.assign(mic, { rec: null, boton: null });
+    const blob = new Blob(partes, { type: (rec.mimeType || tipo || 'audio/webm').split(';')[0] });
+    marcarMic(boton, 'procesando'); boton.disabled = true;
+    try {
+      if (blob.size < 1000) throw new Error('la grabación quedó vacía. Pulsa el micrófono, habla y vuelve a pulsarlo para terminar.');
+      const texto = await transcribirVoz(blob);
+      if (!texto) throw new Error('no se entendió el audio. Intenta de nuevo, más cerca del micrófono.');
+      await destino(texto);
+    } catch (e) {
+      renderAlerts([['err', `Dictado por voz: ${esc(e.message)}`]]);
+    } finally {
+      boton.disabled = false; marcarMic(boton, 'listo');
+    }
+  };
+  try { rec.start(); }
+  catch { stream.getTracks().forEach(t => t.stop()); Object.assign(mic, { rec: null, boton: null }); return renderAlerts([['err', 'No se pudo iniciar la grabación: revisa que el micrófono esté conectado.']]); }
+  marcarMic(boton, 'grabando');
+  mic.tope = setTimeout(() => { if (rec.state === 'recording') rec.stop(); }, 60e3);  // máximo un minuto
+}
+
 // ---------- asistente IA (función /api/asistente con Claude) ----------
 // Disponible con sesión iniciada y datos de Supabase; con un Excel propio se usan las reglas locales.
 const AI_URL = CFG.asistenteIA || 'api/asistente';
@@ -652,8 +718,8 @@ async function postConCaptcha(url, cuerpo) {
   }
   throw Object.assign(new Error('No se pudo completar la verificación de seguridad.'), { data: {} });
 }
-async function askAI(modo, pregunta = '') {
-  const { r, data } = await postConCaptcha(AI_URL, { modo, pregunta, escenario: state.scenario, semana: state.week, historial: modo === 'pregunta' ? state.chatHist : [] });
+async function askAI(modo, pregunta = '', extra = {}) {
+  const { r, data } = await postConCaptcha(AI_URL, { ...extra, modo, pregunta, escenario: state.scenario, semana: state.week, historial: modo === 'pregunta' ? state.chatHist : [] });
   if (!r.ok) throw new Error(data.error || `error ${r.status}`);
   return data;
 }
@@ -672,7 +738,7 @@ function aiToHtml(text) {
   return html + (list ? '</ul>' : '');
 }
 
-async function ask(q) {
+async function ask(q, { porVoz = false } = {}) {
   if (!q.trim() || !state.data.size) return;
   pushMsg('user', q);
   let a;
@@ -693,7 +759,8 @@ async function ask(q) {
       $('#chatInput').focus();
     }
   } else a = answer(q);
-  conVoz(pushMsg('bot', a.text, a.src), 'asistente', a.text);
+  const respuesta = conVoz(pushMsg('bot', a.text, a.src), 'asistente', a.text);
+  if (porVoz) respuesta.querySelector('.voz-btn')?.click();
   addLog({ tipo: 'pregunta', semana: state.week, q, a: a.text, src: a.src, rev: '', fb: '' });
 }
 
@@ -957,7 +1024,7 @@ function draftChanged() {
     renderDraftChecks();
   }, 600);
 }
-async function sendAgent(text) {
+async function sendAgent(text, { porVoz = false } = {}) {
   if (!text.trim() || state.agent.busy || !aiAvailable()) return;
   agentMsg('user', text);
   const pending = agentMsg('bot', 'Anotando los datos…');
@@ -969,7 +1036,8 @@ async function sendAgent(text) {
     state.agent.drafts = r.borradores;
     state.agent.check = r;
     state.agent.touched = true;
-    conVoz(agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`), 'agente', r.mensaje);
+    const respuesta = conVoz(agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`), 'agente', r.mensaje);
+    if (porVoz) respuesta.querySelector('.voz-btn')?.click();
   } catch (e) {
     agentMsg('bot', `No pude procesar el mensaje: ${e.message}. Puedes intentarlo de nuevo o llenar la tabla a mano.`);
   } finally {
@@ -1317,6 +1385,11 @@ $('#copyBtn').addEventListener('click', async () => {
   setTimeout(() => ($('#copyBtn').textContent = 'Copiar texto'), 1800);
 });
 $('#briefVozBtn').addEventListener('click', () => hablar(briefToText(), 'briefing', $('#briefVozBtn')));
+// micrófonos: asistente (pregunta), agente (datos de la semana) y briefing (indicación para el resumen con IA)
+$('#chatMic').addEventListener('click', () => grabar($('#chatMic'), texto => ask(texto, { porVoz: true })));
+$('#agentMic').addEventListener('click', () => grabar($('#agentMic'), texto => sendAgent(texto, { porVoz: true })));
+$('#briefMic').addEventListener('click', () => grabar($('#briefMic'), texto => renderAIBriefing(texto, { porVoz: true })));
+['#chatMic', '#agentMic', '#briefMic'].forEach(id => marcarMic($(id), 'listo'));
 $('#approveBtn').addEventListener('click', () => {
   const rev = $('#reviewer').value.trim();
   if (!rev) { $('#reviewer').focus(); $('#reviewer').placeholder = 'Escribe quién revisó antes de aprobar'; return; }
