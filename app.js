@@ -1162,16 +1162,23 @@ document.addEventListener('keydown', e => {
 });
 // ---------- video tutorial ----------
 // Se ofrece (opcional) en cada inicio de sesión: al entrar con el formulario o al abrir la app en una sesión nueva del navegador.
-const video = { abierto: false, visto: false, foco: null, alCerrar: null };
+const video = { abierto: false, visto: false, foco: null, alCerrar: null, cual: 'tutorial' };
+const VIDEOS = {
+  tutorial: { src: 'media/tutorial.mp4', poster: 'media/tutorial.jpg', titulo: 'Video tutorial · 2 min 39 s' },
+  comercial: { src: 'media/comercial.mp4', poster: 'media/comercial.jpg', titulo: 'Video comercial · 2 min 12 s' },
+};
 const videoClave = () => 'yango_video_ofrecido_' + (state.user?.id || 'anon');
 function videoToca() {
   if (state.recienEntro) return true;
   try { return !sessionStorage.getItem(videoClave()); } catch { return false; }
 }
-function abrirVideo(oferta = false, alCerrar = null) {
+function abrirVideo(oferta = false, alCerrar = null, cual = 'tutorial') {
   if (video.abierto) return;
-  try { sessionStorage.setItem(videoClave(), '1'); } catch { /* sin almacenamiento */ }
-  Object.assign(video, { abierto: true, visto: false, foco: document.activeElement, alCerrar });
+  if (oferta) try { sessionStorage.setItem(videoClave(), '1'); } catch { /* sin almacenamiento */ }
+  Object.assign(video, { abierto: true, visto: false, foco: document.activeElement, alCerrar, cual });
+  const v = $('#videoTutorial'), d = VIDEOS[cual];
+  if (v.dataset.cual !== cual) { v.removeAttribute('src'); v.load(); v.poster = d.poster; v.dataset.cual = cual; }
+  $('#videoTitulo').textContent = d.titulo;
   $('#videoOferta').hidden = !oferta;
   $('#videoAcciones').hidden = !oferta;
   $('#videoPlay').hidden = false;
@@ -1180,10 +1187,10 @@ function abrirVideo(oferta = false, alCerrar = null) {
 }
 function reproducirVideo() {
   const v = $('#videoTutorial');
-  if (!v.getAttribute('src')) v.src = 'media/tutorial.mp4';
+  if (!v.getAttribute('src')) v.src = VIDEOS[video.cual].src;
   $('#videoOferta').hidden = $('#videoAcciones').hidden = $('#videoPlay').hidden = true;
   video.visto = true;
-  tourMarcar();  // ver el video cuenta como haber visto el tutorial
+  if (video.cual === 'tutorial') tourMarcar();  // ver el tutorial cuenta como haber visto el recorrido
   v.play().catch(() => { /* el navegador puede pedir pulsar play */ });
   v.focus();
 }
@@ -1198,6 +1205,8 @@ function cerrarVideo() {
 }
 $('#videoBtn').addEventListener('click', () => { abrirVideo(false); reproducirVideo(); });
 $('#videoBtnInicio').addEventListener('click', () => { abrirVideo(false); reproducirVideo(); });
+$('#comercialBtn').addEventListener('click', () => { abrirVideo(false, null, 'comercial'); reproducirVideo(); });
+$('#comercialBtnInicio').addEventListener('click', () => { abrirVideo(false, null, 'comercial'); reproducirVideo(); });
 $('#videoVer').addEventListener('click', reproducirVideo);
 $('#videoPlay').addEventListener('click', reproducirVideo);
 $('#videoNo').addEventListener('click', cerrarVideo);
