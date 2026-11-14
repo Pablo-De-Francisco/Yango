@@ -368,3 +368,9 @@ html.mobile .tour-card.arriba:not(.centro) { top: 16px !important; bottom: auto;
 .video-play:hover { background: var(--red-dark); }
 .video-card .row-actions { margin-top: 12px; }
 html.mobile .video-play { width: 60px; height: 60px; }
+
+/* ---------- escuchar respuestas (voz de Gemini) ---------- */
+.voz-btn { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px; background: #fff; color: var(--ink); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.voz-btn:hover { border-color: var(--red); color: var(--red); }
+.voz-btn[data-estado="sonando"] { background: var(--pink); border-color: var(--red); color: var(--red-dark); }
+.msg .voz-btn { display: flex; width: fit-content; }

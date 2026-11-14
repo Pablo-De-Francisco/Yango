@@ -512,6 +512,7 @@ function renderBriefing() {
   $('#briefing').innerHTML = currentBrief.html;
   $('#briefFoot').textContent = `Resumen generado desde la hoja «kpis» (semana ${state.week}) · pendiente de revisión por: analista de marketing`;
   $('#aiBriefBtn').hidden = !aiAvailable();
+  $('#briefVozBtn').hidden = !aiAvailable();
   $('#sendNowBtn').hidden = !(aiAvailable() && state.isAdmin);
 }
 async function renderAIBriefing() {
@@ -553,6 +554,77 @@ function pushMsg(who, text, src) {
   if (src) { const s = document.createElement('span'); s.className = 'src'; s.textContent = 'Fuente: ' + src; el.appendChild(s); }
   $('#chatLog').appendChild(el);
   $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+  return el;
+}
+
+// ---------- voz (Gemini por /api/voz): una voz para el asistente, otra para el agente y otra para el briefing ----------
+// El audio se reproduce con Web Audio (no necesita permisos extra en la política de seguridad del sitio).
+const VOZ_URL = CFG.voz || 'api/voz';
+const voz = { ctx: null, fuente: null, boton: null, id: 0 };
+// divide el texto en fragmentos de hasta `max` caracteres, cortando en el final de una frase
+function trozosVoz(texto, max = 600) {
+  const frases = String(texto).replace(/\s+/g, ' ').trim().split(/(?<=[.!?…:;])\s+/);
+  const out = []; let cur = '';
+  for (let f of frases) {
+    while (f.length > max) { const corte = f.lastIndexOf(' ', max) > 0 ? f.lastIndexOf(' ', max) : max; out.push(f.slice(0, corte)); f = f.slice(corte).trim(); }
+    if ((cur + ' ' + f).trim().length > max) { if (cur) out.push(cur); cur = f; } else cur = (cur + ' ' + f).trim();
+  }
+  if (cur) out.push(cur);
+  return out.filter(Boolean);
+}
+async function pedirVoz(texto, rol) {
+  const session = (await SB.auth.getSession()).data.session;
+  const r = await fetch(VOZ_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session ? session.access_token : ''}` },
+    body: JSON.stringify({ texto, rol }),
+  });
+  if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || `error ${r.status}`); }
+  return r.arrayBuffer();
+}
+const ETIQUETA_VOZ = { listo: '🔊 Escuchar', cargando: '⏳ Preparando audio…', sonando: '⏹ Detener' };
+function marcarVoz(b, estado) { b.dataset.estado = estado; b.textContent = ETIQUETA_VOZ[estado]; b.setAttribute('aria-pressed', String(estado !== 'listo')); }
+function pararVoz() {
+  voz.id++;
+  try { voz.fuente?.stop(); } catch { /* ya terminó */ }
+  voz.fuente = null;
+  if (voz.boton) marcarVoz(voz.boton, 'listo');
+  voz.boton = null;
+}
+async function hablar(texto, rol, boton) {
+  if (voz.boton === boton) return pararVoz();  // segundo clic: detener
+  pararVoz();
+  const id = voz.id, partes = trozosVoz(texto);
+  if (!partes.length) return;
+  voz.boton = boton; marcarVoz(boton, 'cargando');
+  try {
+    voz.ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+    await voz.ctx.resume();
+    let siguiente = pedirVoz(partes[0], rol); siguiente.catch(() => {});
+    for (let i = 0; i < partes.length; i++) {
+      const datos = await siguiente;
+      if (id !== voz.id) return;
+      if (i + 1 < partes.length) { siguiente = pedirVoz(partes[i + 1], rol); siguiente.catch(() => {}); }  // se prepara mientras suena
+      const audio = await voz.ctx.decodeAudioData(datos);
+      if (id !== voz.id) return;
+      marcarVoz(boton, 'sonando');
+      await new Promise(fin => { const s = voz.ctx.createBufferSource(); s.buffer = audio; s.connect(voz.ctx.destination); s.onended = fin; voz.fuente = s; s.start(); });
+      if (id !== voz.id) return;
+    }
+  } catch (e) {
+    if (id === voz.id) renderAlerts([['err', `No se pudo leer en voz alta: ${esc(e.message)}`]]);
+  } finally {
+    if (id === voz.id) { voz.fuente = null; voz.boton = null; marcarVoz(boton, 'listo'); }
+  }
+}
+// agrega el botón «Escuchar» a un mensaje del asistente o del agente
+function conVoz(el, rol, texto) {
+  if (!aiAvailable() || !texto) return el;
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'voz-btn'; marcarVoz(b, 'listo');
+  b.title = rol === 'agente' ? 'Escuchar con la voz del agente' : 'Escuchar con la voz del asistente';
+  b.addEventListener('click', () => hablar(texto, rol, b));
+  el.appendChild(b);
   return el;
 }
 
@@ -621,7 +693,7 @@ async function ask(q) {
       $('#chatInput').focus();
     }
   } else a = answer(q);
-  pushMsg('bot', a.text, a.src);
+  conVoz(pushMsg('bot', a.text, a.src), 'asistente', a.text);
   addLog({ tipo: 'pregunta', semana: state.week, q, a: a.text, src: a.src, rev: '', fb: '' });
 }
 
@@ -897,7 +969,7 @@ async function sendAgent(text) {
     state.agent.drafts = r.borradores;
     state.agent.check = r;
     state.agent.touched = true;
-    agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`);
+    conVoz(agentMsg('bot', r.mensaje, `agente de datos (${r.modelo})`), 'agente', r.mensaje);
   } catch (e) {
     agentMsg('bot', `No pude procesar el mensaje: ${e.message}. Puedes intentarlo de nuevo o llenar la tabla a mano.`);
   } finally {
@@ -1244,6 +1316,7 @@ $('#copyBtn').addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(text); $('#copyBtn').textContent = 'Copiado ✓'; } catch { $('#copyBtn').textContent = 'No se pudo copiar'; }
   setTimeout(() => ($('#copyBtn').textContent = 'Copiar texto'), 1800);
 });
+$('#briefVozBtn').addEventListener('click', () => hablar(briefToText(), 'briefing', $('#briefVozBtn')));
 $('#approveBtn').addEventListener('click', () => {
   const rev = $('#reviewer').value.trim();
   if (!rev) { $('#reviewer').focus(); $('#reviewer').placeholder = 'Escribe quién revisó antes de aprobar'; return; }

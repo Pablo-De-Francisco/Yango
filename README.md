@@ -49,6 +49,7 @@ El rol solo se puede cambiar desde el SQL Editor; ningún usuario puede hacerse 
 ## Asistente IA y resumen semanal por correo
 
 - **Asistente IA** (`api/asistente.js`): responde en lenguaje natural con **Gemini** (plan gratuito, variable `GEMINI_API_KEY`; prioriza velocidad: `gemini-3.5-flash-lite` y, si está saturado, `gemini-3.6-flash` y `gemini-3.8-flash`) o con **Claude** (`claude-opus-5-5`, de pago, variable `ANTHROPIC_API_KEY`). En cada consulta el servidor verifica la sesión, trae de Supabase los datos del escenario elegido (todas las semanas, diccionario y presupuesto), calcula ROAS, CPA, variaciones y avance del presupuesto, y se los entrega a la IA, que solo puede usar esas cifras. Recuerda la conversación (últimos 8 mensajes). En la pestaña Briefing, **Resumen detallado con IA** genera el briefing completo. Límite: 40 consultas por usuario y hora. Si la IA no está configurada o falla, responde el motor de reglas.
+- **Respuestas en voz** (`api/voz.js`): cada respuesta del asistente y del agente trae el botón **🔊 Escuchar**, y el briefing también. La voz la genera **Gemini** (texto a voz, con la misma `GEMINI_API_KEY`) y cada módulo tiene la suya: asistente RAG = *Kore*, agente de datos = *Puck*, briefing = *Charon*. Los textos largos se piden por fragmentos (el siguiente se prepara mientras suena el actual) y se reproducen con Web Audio. Requiere sesión iniciada; límite: 120 fragmentos de audio por usuario y hora.
 - **Resumen semanal** (`api/resumen-semanal.js`): cada **lunes a las 12:00 UTC** (7:00 a. m. en Colombia; ver `crons` en `vercel.json`) genera el briefing de la última semana del escenario *Base* y lo envía al correo de cada usuario con **«Resumen semanal por correo»** activado (casilla junto a su usuario). El administrador puede enviarlo en el momento con **Enviar resumen semanal ahora**.
 
 - **Agente de datos** (pestaña 2, `api/agente-datos.js`): conversa con la persona para cargar una o varias semanas. Si recibe un párrafo dividido por semanas, arma una tabla editable para cada una. Propone el número de semana y la fecha siguientes a la última cargada, pide por canal la inversión, impresiones, clics, conversiones e ingresos (acepta cifras escritas como "12 mil") y las anota en la tabla de su semana. El servidor valida con reglas fijas (datos que faltan, negativos, clics mayores que impresiones, cambios bruscos frente a la semana anterior, semana repetida). Después: **Guardar en la base de datos** (solo administradores; escribe en `datos_crudos` con la clave secreta y queda en el registro), **Descargar Excel actualizado** o **Ver en el tablero** (solo en el navegador).
@@ -62,6 +63,8 @@ Variables de entorno en **Vercel → Settings → Environment Variables** (despu
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API Keys → **secret key** (solo aquí, nunca en `config.js`) |
 | `CRON_SECRET` | una frase larga cualquiera; Vercel la usa para autorizar el envío programado |
 | `TURNSTILE_SECRET` | Secret Key del widget de Cloudflare Turnstile: con ella el servidor pide el CAPTCHA cada 5 consultas a la IA |
+| `GEMINI_TTS_MODEL` | Opcional: modelo de voz de Gemini (si no se define, se prueban los modelos de voz conocidos y, si no existen, se busca uno en la cuenta) |
+| `VOZ_ASISTENTE` / `VOZ_AGENTE` / `VOZ_BRIEFING` | Opcional: cambia la voz de cada módulo (voces de Gemini, p. ej. Kore, Puck, Charon, Aoede, Leda) |
 | `SMTP_USER` | la cuenta de Gmail que envía los correos |
 | `SMTP_PASS` | **contraseña de aplicación** de esa cuenta (Google → Seguridad → Verificación en 2 pasos → Contraseñas de aplicaciones) |
 
@@ -128,6 +131,7 @@ index.html            interfaz
 styles.css            estilos
 app.js                lectura de datos (Supabase o Excel), métricas, briefing, asistente y cuentas
 api/asistente.js      asistente IA (Claude) — función de servidor de Vercel
+api/voz.js            respuestas en voz con Gemini (una voz por módulo)
 api/resumen-semanal.js  envío semanal del briefing por correo (Vercel Cron)
 lib/copiloto.js       lógica compartida de las funciones (datos, métricas, Claude)
 lib/seguridad.js      validación de entradas, rate limiting y cabeceras de la API
