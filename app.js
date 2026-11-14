@@ -188,6 +188,140 @@ function budgetStatus(w) {
   return { mes, label: `${MONTHS[start.getMonth()]} ${start.getFullYear()}`, rows, planT, realT, expected, weeksInMonth };
 }
 
+// ---------- alertas automáticas ----------
+// La herramienta revisa cada semana sin que nadie pregunte: metas del diccionario, caídas fuertes y ritmo del presupuesto.
+// Las mismas reglas corren en el servidor (lib/copiloto.js → calcularAlertas) para el correo de cada lunes.
+const UMBRAL = { caida: 0.10, adelanto: 0.10, atraso: 0.15 };
+function alertasSemana(w) {
+  const cur = metrics(w);
+  if (!cur) return [];
+  const pw = prevWeek(w), prev = pw != null ? metrics(pw) : null, out = [];
+  const gR = goal('ROAS'), gC = goal('CPA');
+  for (const r of cur.rows) {
+    if (!meets(gR, r.roas)) out.push({ nivel: 'alta', canal: r.canal, titulo: `${r.canal} está por debajo de la meta de ROAS`, detalle: `ROAS de ${fmtX(r.roas)} frente a la meta ${gR.label}.`, pregunta: `¿Por qué ${r.canal} está por debajo de la meta de ROAS y qué podemos hacer?` });
+    else {
+      const a = prev?.byCanal.get(r.canal);
+      if (a?.roas && change(r.roas, a.roas) <= -UMBRAL.caida) out.push({ nivel: 'media', canal: r.canal, titulo: `El ROAS de ${r.canal} cayó ${fmtPct(-change(r.roas, a.roas), 0)}`, detalle: `Pasó de ${fmtX(a.roas)} a ${fmtX(r.roas)} frente a la semana ${pw}.`, pregunta: `¿Qué explica la caída del ROAS de ${r.canal} esta semana?` });
+    }
+    if (!meets(gC, r.cpa)) out.push({ nivel: 'alta', canal: r.canal, titulo: `El CPA de ${r.canal} supera la meta`, detalle: `CPA de $${dec(r.cpa, 2)} frente a la meta ${gC.label}.`, pregunta: `¿Por qué el CPA de ${r.canal} está por encima de la meta?` });
+  }
+  if (prev && prev.tot.conv && change(cur.tot.conv, prev.tot.conv) <= -UMBRAL.caida) out.push({ nivel: 'media', canal: 'Total', titulo: `Las conversiones cayeron ${fmtPct(-change(cur.tot.conv, prev.tot.conv), 0)}`, detalle: `Pasaron de ${fmtK(prev.tot.conv)} a ${fmtK(cur.tot.conv)} frente a la semana ${pw}.`, pregunta: '¿Qué canal explica la caída de conversiones de esta semana?' });
+  const b = budgetStatus(w);
+  if (b && b.planT) {
+    const ejec = b.realT / b.planT;
+    if (ejec - b.expected >= UMBRAL.adelanto) out.push({ nivel: 'media', canal: 'Presupuesto', titulo: 'El gasto va adelantado frente al presupuesto', detalle: `Se ha invertido el ${fmtPct(ejec, 0)} de ${b.label} cuando lo esperado es ${fmtPct(b.expected, 0)}.`, pregunta: '¿Cómo vamos frente al presupuesto?' });
+    else if (b.expected - ejec >= UMBRAL.atraso) out.push({ nivel: 'baja', canal: 'Presupuesto', titulo: 'El gasto va atrasado frente al presupuesto', detalle: `Se ha invertido el ${fmtPct(ejec, 0)} de ${b.label} cuando lo esperado es ${fmtPct(b.expected, 0)}.`, pregunta: '¿Cómo vamos frente al presupuesto?' });
+  }
+  const orden = { alta: 0, media: 1, baja: 2 };
+  return out.sort((a, c) => orden[a.nivel] - orden[c.nivel]);
+}
+const ICONO_ALERTA = { alta: '🔴', media: '🟠', baja: '🟡' };
+function renderAlertasIA() {
+  const lista = state.week != null ? alertasSemana(state.week) : [];
+  state.alertas = lista;
+  $('#alertBtn').hidden = false;
+  $('#alertCount').textContent = lista.length || '✓';
+  $('#alertCount').className = 'count' + (lista.length ? '' : ' ok');
+  $('#alertBtn').title = lista.length ? `${lista.length} alerta(s) automática(s) en la semana ${state.week}` : `Sin alertas en la semana ${state.week}`;
+  const conIA = aiAvailable();
+  $('#alertPanel').innerHTML = `<div class="alertas-cab"><b>🔔 Alertas automáticas · semana ${esc(state.week)}</b>
+      <span class="note">La herramienta revisa los datos de cada semana y avisa sin que nadie pregunte. También llegan en el correo del lunes.</span>
+      ${lista.length && conIA ? '<button type="button" class="voz-btn" id="alertVoz">🔊 Escuchar</button>' : ''}</div>` +
+    (lista.length
+      ? `<ul class="alertas-lista">${lista.map((a, i) => `<li class="alerta-ia ${a.nivel}"><span class="alerta-ico">${ICONO_ALERTA[a.nivel]}</span><div><b>${esc(a.titulo)}</b><br><span>${esc(a.detalle)}</span></div>
+          <button type="button" class="link-btn" data-alerta="${i}">Preguntar al asistente</button></li>`).join('')}</ul>`
+      : '<p class="alertas-ok">✅ Sin alertas: todos los canales cumplen las metas y el presupuesto va al ritmo esperado.</p>');
+  const v = $('#alertVoz');
+  if (v) { marcarVoz(v, 'listo'); v.addEventListener('click', () => hablar(`Alertas de la semana ${state.week}. ` + lista.map(a => `${a.titulo}. ${a.detalle}`).join(' '), 'asistente', v)); }
+}
+// aviso flotante: una vez por sesión, escenario y semana
+function avisarAlertas() {
+  const lista = state.alertas || [];
+  const clave = `yango_alertas_${state.scenario}_${state.week}`;
+  try { if (!lista.length || sessionStorage.getItem(clave)) return; sessionStorage.setItem(clave, '1'); } catch { if (!lista.length) return; }
+  $('#alertToast').innerHTML = `<div><b>🔔 La herramienta detectó ${lista.length} alerta${lista.length > 1 ? 's' : ''} en la semana ${esc(state.week)}</b>
+    <p>${esc(lista[0].titulo)}${lista.length > 1 ? ` y ${lista.length - 1} más` : ''}.</p>
+    <div class="row-actions"><button class="btn primary" type="button" id="alertToastVer">Ver alertas</button><button class="btn ghost" type="button" id="alertToastNo">Cerrar</button></div></div>`;
+  $('#alertToast').hidden = false;
+  $('#alertToastVer').addEventListener('click', () => { $('#alertToast').hidden = true; verAlertas(); });
+  $('#alertToastNo').addEventListener('click', () => { $('#alertToast').hidden = true; });
+}
+// ---------- impacto del piloto (pestaña 6) ----------
+// Indicadores del piloto medidos con el registro log_ia; el tiempo ahorrado es una estimación con supuestos editables.
+const SUP_DEF = { antes: 4, despues: 30, pregunta: 10 };
+const SUP_KEY = 'yango_impacto_supuestos';
+function supuestos() {
+  let s = {};
+  try { s = JSON.parse(localStorage.getItem(SUP_KEY) || '{}'); } catch { /* sin almacenamiento */ }
+  const n = (v, d, min, max) => (Number.isFinite(+v) && +v >= min && +v <= max ? +v : d);
+  return { antes: n(s.antes, SUP_DEF.antes, 0.5, 40), despues: n(s.despues, SUP_DEF.despues, 1, 240), pregunta: n(s.pregunta, SUP_DEF.pregunta, 0, 120) };
+}
+const inicioSemana = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; };
+function renderImpacto() {
+  if (!$('#impCards')) return;
+  const s = supuestos();
+  for (const [id, k] of [['#supAntes', 'antes'], ['#supDespues', 'despues'], ['#supPregunta', 'pregunta']]) if (document.activeElement !== $(id)) $(id).value = s[k];
+  const log = state.log;
+  const briefs = log.filter(r => r.tipo === 'briefing');
+  const correos = briefs.filter(r => /^enviado a/i.test(r.rev));
+  const aprobados = briefs.filter(r => r.rev && !/^enviado a/i.test(r.rev));
+  const preguntas = log.filter(r => r.tipo === 'pregunta');
+  const conFuente = preguntas.filter(r => r.src).length;
+  const decisiones = aprobados.filter(r => (r.fb || '').trim()).length;
+  const semanasBrief = new Set(aprobados.map(r => `${r.escenario}|${r.semana}`)).size;
+  const usuarios = new Set(log.map(r => r.usuario).filter(Boolean)).size;
+  const reduccion = Math.max(0, 1 - (s.despues / 60) / s.antes);
+  const horas = aprobados.length * Math.max(0, s.antes - s.despues / 60) + preguntas.length * s.pregunta / 60;
+  const dict = state.dict, conDueno = dict.filter(d => d.owner && d.meta).length, cobertura = dict.length ? conDueno / dict.length : null;
+  const pctFuente = preguntas.length ? conFuente / preguntas.length : null;
+  const tarjetas = [
+    { t: 'Tiempo del reporte semanal', v: '−' + fmtPct(reduccion, 0), meta: '−50 %', estado: reduccion >= 0.5 ? 'ok' : 'prog', sub: `${dec(horas, 1)} h ahorradas en total (estimado)` },
+    { t: 'Briefings aprobados', v: aprobados.length, meta: '1 por semana', estado: aprobados.length ? 'ok' : 'nada', sub: `${semanasBrief} semana(s) con briefing · ${correos.length} envío(s) por correo` },
+    { t: 'Decisiones registradas', v: decisiones, meta: '≥ 1 por semana', estado: !semanasBrief ? 'nada' : decisiones >= semanasBrief ? 'ok' : 'prog', sub: '«Qué decidir» de cada briefing aprobado' },
+    { t: 'Preguntas respondidas', v: preguntas.length, meta: '≥ 70 % con fuente', estado: pctFuente == null ? 'nada' : pctFuente >= 0.7 ? 'ok' : 'prog', sub: pctFuente == null ? 'Aún no hay preguntas' : `${fmtPct(pctFuente, 0)} con fuente citada` },
+    { t: 'Cobertura del diccionario', v: cobertura == null ? '—' : fmtPct(cobertura, 0), meta: '100 % con dueño y meta', estado: cobertura == null ? 'nada' : cobertura >= 1 ? 'ok' : 'prog', sub: `${conDueno} de ${dict.length} KPIs` },
+    { t: 'Precisión de las cifras', v: '100 %', meta: '100 %', estado: 'diseno', sub: 'Las calcula el sistema con fórmulas fijas; la IA solo las explica' },
+    { t: 'Lectura del briefing', v: '—', meta: '≥ 80 % de la dirección', estado: 'medir', sub: 'Se medirá en el piloto con las aperturas del correo' },
+    { t: 'Usuarios activos', v: usuarios, meta: 'Dirección y equipos', estado: 'info', sub: state.isAdmin ? 'Todas las cuentas del registro' : 'Solo ves tu propio uso' },
+  ];
+  const CHIP = { ok: ['ok', '✓ Cumple'], prog: ['prog', 'En progreso'], nada: ['nada', 'Sin datos aún'], medir: ['nada', 'Por medir'], diseno: ['ok', 'Por diseño'], info: ['info', 'Uso'] };
+  $('#impCards').innerHTML = tarjetas.map(c => `<div class="card imp-card"><div class="lbl">${esc(c.t)}</div><div class="val">${esc(c.v)}</div>
+    <div class="imp-meta">Meta: ${esc(c.meta)} <span class="imp-chip ${CHIP[c.estado][0]}">${CHIP[c.estado][1]}</span></div><div class="note">${esc(c.sub)}</div></div>`).join('');
+  $('#impNota').textContent = (state.logRemote ? (state.isAdmin ? 'Datos del registro central de todos los usuarios (últimos 500 movimientos).' : 'Datos de tu uso registrado en Supabase.') : 'Datos del registro de este navegador.') +
+    ' Se actualiza con cada pregunta y cada briefing aprobado.';
+  // uso por semana (últimas 8 semanas del calendario)
+  const hoy = inicioSemana(new Date()), semanas = Array.from({ length: 8 }, (_, i) => { const d = new Date(hoy); d.setDate(d.getDate() - 7 * (7 - i)); return d; });
+  const cuenta = semanas.map(d => {
+    const fin = new Date(d); fin.setDate(fin.getDate() + 7);
+    const enSemana = log.filter(r => r.ts && new Date(r.ts) >= d && new Date(r.ts) < fin);
+    return { d, p: enSemana.filter(r => r.tipo === 'pregunta').length, b: enSemana.filter(r => r.tipo === 'briefing').length };
+  });
+  const max = Math.max(1, ...cuenta.map(c => c.p + c.b));
+  $('#impUso').innerHTML = `<div class="imp-barras">${cuenta.map(c => `<div class="imp-col" title="${c.p} pregunta(s) y ${c.b} briefing(s)">
+      <div class="imp-pila" style="height:${((c.p + c.b) / max) * 100}%"><div class="imp-b" style="flex:${c.b}"></div><div class="imp-p" style="flex:${c.p}"></div></div>
+      <span>${c.d.toLocaleDateString('es-CO', { day: 'numeric', month: 'short' })}</span></div>`).join('')}</div>
+    <div class="bar-legend"><span class="imp-ley imp-p"></span> Preguntas al asistente &nbsp; <span class="imp-ley imp-b"></span> Briefings</div>`;
+}
+['#supAntes', '#supDespues', '#supPregunta'].forEach(id => $(id).addEventListener('change', () => {
+  try { localStorage.setItem(SUP_KEY, JSON.stringify({ antes: $('#supAntes').value, despues: $('#supDespues').value, pregunta: $('#supPregunta').value })); } catch { /* sin almacenamiento */ }
+  renderImpacto();
+}));
+$('#alertBtn').addEventListener('click', () => verAlertas());
+$('#alertPanel').addEventListener('click', e => {
+  const b = e.target.closest('[data-alerta]');
+  if (!b) return;
+  const a = (state.alertas || [])[+b.dataset.alerta];
+  if (!a) return;
+  document.querySelector('.tabs button[data-tab="chat"]').click();
+  ask(a.pregunta);
+});
+
+function verAlertas() {
+  closeStartMenu('kpis');
+  document.querySelector('.tabs button[data-tab="kpis"]').click();
+  $('#alertPanel').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
 // ---------- briefing ----------
 function briefing(w) {
   const cur = metrics(w), pw = prevWeek(w), prev = pw != null ? metrics(pw) : null;
@@ -411,7 +545,7 @@ async function loadLog() {
       const rows = await sb('log_ia_detalle?select=*&order=created_at.desc&limit=500');
       state.log = rows.reverse().map(r => ({
         fecha: new Date(r.created_at).toLocaleString('es-CO'), usuario: r.email || '(sin cuenta)', tipo: r.tipo, escenario: r.escenario || '', semana: r.semana,
-        q: r.pregunta, a: r.respuesta || '', src: r.fuente || '', rev: r.revisado_por || '', fb: r.decision || '',
+        q: r.pregunta, a: r.respuesta || '', src: r.fuente || '', rev: r.revisado_por || '', fb: r.decision || '', ts: r.created_at,
       }));
       state.logRemote = true;
     } catch (e) {
@@ -441,7 +575,7 @@ function renderLogUsers() {
 }
 function saveLog() { try { localStorage.setItem(LOG_KEY, JSON.stringify(state.log)); } catch { /* sin almacenamiento */ } }
 function addLog(entry) {
-  const e = { fecha: new Date().toLocaleString('es-CO'), usuario: state.user ? state.user.email : '', escenario: state.isUser ? 'archivo propio' : state.scenario, ...entry };
+  const e = { fecha: new Date().toLocaleString('es-CO'), ts: new Date().toISOString(), usuario: state.user ? state.user.email : '', escenario: state.isUser ? 'archivo propio' : state.scenario, ...entry };
   state.log.push(e);
   if (state.isAdmin) renderLogUsers();
   renderLog();
@@ -504,6 +638,7 @@ function renderKPIs() {
 
   $('#dictTable').innerHTML = `<thead><tr><th>KPI</th><th>Definición única</th><th>Dueño</th><th>Meta</th></tr></thead><tbody>` +
     (state.dict.length ? state.dict.map(d => `<tr><td><b>${esc(d.kpi)}</b></td><td>${esc(d.def)}${d.formula ? `<br><span class="note">${esc(d.formula)}</span>` : ''}</td><td>${esc(d.owner)}</td><td>${esc(d.meta)}</td></tr>`).join('') : '<tr><td colspan="4">Sin diccionario.</td></tr>') + '</tbody>';
+  renderAlertasIA();
 }
 let currentBrief = null;
 function renderBriefing() {
@@ -533,6 +668,7 @@ async function renderAIBriefing(indicacion = '', { porVoz = false } = {}) {
   }
 }
 function renderLog() {
+  renderImpacto();
   const showUser = state.isAdmin;
   const rows = state.log.filter(r => !showUser || !state.logUser || r.usuario === state.logUser);
   $('#logTable').innerHTML = `<thead><tr><th>Fecha</th>${showUser ? '<th>Usuario</th>' : ''}<th>Tipo</th><th>Escenario</th><th>Semana</th><th>Pregunta / briefing</th><th>Respuesta</th><th>Revisado por</th></tr></thead><tbody>` +
@@ -1206,11 +1342,12 @@ const TOUR = [
   { t: 'Bienvenido al Copiloto de Marketing IA', x: 'En un minuto te mostramos cómo funciona: cargar los datos, ver los KPIs, generar el briefing semanal y preguntarle al asistente. Puedes saltarlo cuando quieras.' },
   { sel: '#startMenu .start-grid', inicio: true, t: 'Elige cómo cargar los datos', x: 'Sube tu propio Excel a partir de la plantilla base, dale las cifras al agente de datos o explora la herramienta con datos simulados.' },
   { sel: '.source-actions', t: 'Escenario, semana y archivos', x: 'Aquí cambias de escenario y de semana, vuelves al menú de inicio, cargas tu Excel o descargas la plantilla base.' },
-  { sel: '.tabs button[data-tab="kpis"]', tab: 'kpis', t: '1 · Hoja de KPIs', x: 'Inversión, conversiones, ingresos, ROAS y CPA por canal, con la tendencia semanal, el plan vs. real y el diccionario de cada KPI. El ROAS sale en rojo si está bajo la meta.' },
+  { sel: '.tabs button[data-tab="kpis"]', tab: 'kpis', t: '1 · Hoja de KPIs', x: 'Arriba, las alertas automáticas: la herramienta avisa sola si un canal está bajo la meta o el presupuesto se desvía. Debajo, inversión, conversiones, ingresos, ROAS y CPA por canal, con tendencia, plan vs. real y diccionario.' },
   { sel: '.tabs button[data-tab="agente"]', tab: 'agente', t: '2 · Agente de datos', x: 'Escríbele las cifras como quieras, incluso un párrafo con varias semanas: arma una tabla por semana, la valida y la guardas (o la envías al administrador para que la apruebe).' },
   { sel: '.tabs button[data-tab="briefing"]', tab: 'briefing', t: '3 · Briefing semanal IA', x: 'La IA redacta qué cambió, por qué y qué decidir. Tú lo revisas, lo apruebas y lo envías por correo a la dirección.' },
   { sel: '.tabs button[data-tab="chat"]', tab: 'chat', t: '4 · Asistente de preguntas', x: 'Pregunta en lenguaje natural, por ejemplo «¿qué canal tuvo peor ROAS?». Responde solo con los datos y cita la fuente. Cada 5 consultas te pedirá confirmar que no eres un robot.' },
   { sel: '.tabs button[data-tab="log"]', tab: 'log', t: '5 · Registro (log_ia)', x: 'Cada briefing y cada pregunta quedan guardados con el usuario que los hizo, para revisar cómo se usa la IA.' },
+  { sel: '.tabs button[data-tab="impacto"]', tab: 'impacto', t: '6 · Impacto del piloto', x: 'Los indicadores del piloto medidos con el uso real: briefings aprobados, decisiones, preguntas con fuente y el tiempo ahorrado estimado frente a la meta de −50 %.' },
   { sel: '#modeBtn', t: 'Modo celular o escritorio', x: 'Cambia la vista según tu pantalla. Para ver este tutorial de nuevo, usa el botón «Tutorial».' },
   { t: '¡Listo!', x: 'Ya puedes empezar. Este recorrido volverá a aparecer en 5 días; puedes saltarlo siempre que quieras.' },
 ];
@@ -1422,6 +1559,7 @@ async function startApp() {
   if (videoToca()) abrirVideo(true, visto => { if (!visto && tourToca()) abrirTour(); });
   else if (tourToca()) abrirTour();
   state.recienEntro = false;
+  setTimeout(avisarAlertas, 1200);  // la herramienta avisa sola si hay alertas en la semana
   await loadLog();
 }
 function showGate(msg = '', cls = '') {

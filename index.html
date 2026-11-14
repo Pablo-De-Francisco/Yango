@@ -50,6 +50,7 @@
         <label class="field">Semana
           <select id="weekSel" aria-label="Semana"></select>
         </label>
+        <button class="btn alert-btn" id="alertBtn" type="button" hidden>🔔 Alertas <span class="count" id="alertCount"></span></button>
         <button class="btn" id="homeBtn" type="button">Menú de inicio</button>
         <button class="btn ghost" id="tourBtn" type="button" title="Ver de nuevo el recorrido por la herramienta">Tutorial</button>
         <button class="btn ghost" id="videoBtn" type="button" title="Ver el video tutorial (2 min 39 s)">Video tutorial</button>
@@ -125,11 +126,13 @@
     <button role="tab" data-tab="briefing"><b>3</b><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg></i> <span class="tl">Briefing semanal IA</span><span class="ts">Briefing</span></button>
     <button role="tab" data-tab="chat"><b>4</b><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12Z"/></svg></i> <span class="tl">Asistente de preguntas</span><span class="ts">Asistente</span></button>
     <button role="tab" data-tab="log"><b>5</b><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg></i> <span class="tl">Registro (log_ia)</span><span class="ts">Registro</span></button>
+    <button role="tab" data-tab="impacto"><b>6</b><i><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></i> <span class="tl">Impacto del piloto</span><span class="ts">Impacto</span></button>
   </nav>
 
   <main>
     <!-- 1. KPIs -->
     <section id="tab-kpis" class="tab active">
+      <div class="win alertas-ia" id="alertPanel" aria-live="polite"></div>
       <div class="cards" id="cards"></div>
       <div class="grid2">
         <div class="win">
@@ -260,6 +263,34 @@
         </div>
       </div>
     </section>
+
+    <!-- 6. Impacto del piloto -->
+    <section id="tab-impacto" class="tab">
+      <div class="win">
+        <div class="win-bar"><i></i><i></i><i></i><span>Impacto del piloto · medido con el uso real del Copiloto</span></div>
+        <div class="win-body">
+          <p class="note" id="impNota" style="margin-top:0"></p>
+          <div class="imp-grid" id="impCards"></div>
+        </div>
+      </div>
+      <div class="grid2">
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>Uso por semana</span></div>
+          <div class="win-body"><div id="impUso"></div></div>
+        </div>
+        <div class="win">
+          <div class="win-bar"><i></i><i></i><i></i><span>Supuestos del tiempo ahorrado (editables)</span></div>
+          <div class="win-body">
+            <div class="imp-sup">
+              <label>Horas para preparar el reporte a mano <input type="number" id="supAntes" min="0.5" max="40" step="0.5"></label>
+              <label>Minutos para revisar y aprobar el briefing <input type="number" id="supDespues" min="1" max="240" step="1"></label>
+              <label>Minutos que ahorra cada pregunta respondida <input type="number" id="supPregunta" min="0" max="120" step="1"></label>
+            </div>
+            <p class="note">El tiempo ahorrado es una estimación: se multiplica el uso registrado por estos supuestos. En el piloto, la línea base se mide cronometrando el reporte manual.</p>
+          </div>
+        </div>
+      </div>
+    </section>
   </main>
 
   <footer class="foot">
@@ -305,6 +336,8 @@
       </div>
     </div>
   </div>
+
+  <div class="toast-alerta win" id="alertToast" hidden role="status" aria-live="polite"></div>
 
   <div class="captcha-modal" id="captchaModal" hidden role="dialog" aria-modal="true" aria-labelledby="captchaModalTitulo">
     <div class="win captcha-card">

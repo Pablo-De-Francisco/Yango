@@ -383,3 +383,41 @@ html.mobile .video-play { width: 60px; height: 60px; }
 .mic-btn[hidden] { display: none !important; }
 @keyframes grabando { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, .45); } 50% { box-shadow: 0 0 0 8px rgba(255, 0, 0, 0); } }
 @media (prefers-reduced-motion: reduce) { .mic-btn[data-estado="grabando"], #briefMic[data-estado="grabando"] { animation: none; } }
+
+/* ---------- alertas automáticas ---------- */
+.alertas-ia { padding: 14px 18px; margin-bottom: 14px; border-left: 6px solid var(--red); }
+.alertas-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.alertas-cab .note { margin: 0; flex: 1 1 320px; }
+.alertas-cab .voz-btn { margin-top: 0; }
+.alertas-lista { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.alerta-ia { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; background: #fafafa; font-size: 14px; }
+.alerta-ia.alta { background: #fdecec; } .alerta-ia.media { background: #fff4e5; } .alerta-ia.baja { background: #fffbe6; }
+.alerta-ia > div { flex: 1; }
+.alerta-ia span { color: var(--muted); }
+.alerta-ico { font-size: 16px; line-height: 1.4; }
+.alertas-ok { margin: 8px 0 0; color: var(--green); font-weight: 600; font-size: 14px; }
+.alert-btn .count { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 6px; border-radius: 99px; background: var(--red); color: #fff; font-size: 11px; line-height: 18px; text-align: center; }
+.alert-btn .count.ok { background: var(--green); }
+.toast-alerta { position: fixed; right: 20px; bottom: 20px; z-index: 40; width: min(380px, calc(100vw - 32px)); padding: 16px 18px; border-left: 6px solid var(--red); box-shadow: 0 12px 30px rgba(0,0,0,.2); }
+.toast-alerta[hidden] { display: none; }
+.toast-alerta p { margin: 6px 0 10px; font-size: 14px; color: var(--muted); }
+html.mobile .toast-alerta { bottom: 84px; right: 16px; }
+
+/* ---------- impacto del piloto ---------- */
+.imp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.imp-card .val { font-size: 30px; }
+.imp-meta { font-size: 13px; margin: 6px 0 4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.imp-chip { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 99px; }
+.imp-chip.ok { background: var(--green-bg); color: var(--green); }
+.imp-chip.prog { background: #fff4e5; color: #b26a00; }
+.imp-chip.nada { background: #f0f0f2; color: var(--muted); }
+.imp-chip.info { background: var(--pink); color: var(--red-dark); }
+.imp-card .note { margin-top: 2px; }
+.imp-barras { display: flex; align-items: flex-end; gap: 8px; height: 180px; padding-top: 8px; }
+.imp-col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.imp-pila { width: 100%; max-width: 46px; min-height: 2px; display: flex; flex-direction: column; border-radius: 6px 6px 0 0; overflow: hidden; background: #f0f0f2; }
+.imp-p { background: var(--red); } .imp-b { background: #1d1d1f; }
+.imp-ley { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; }
+.imp-sup { display: grid; gap: 10px; }
+.imp-sup label { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; }
+.imp-sup input { width: 90px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }

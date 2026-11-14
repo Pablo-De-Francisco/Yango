@@ -37,7 +37,14 @@ export default async function handler(req, res) {
 
     const ctx = await contexto(process.env.RESUMEN_ESCENARIO || 'base', null, servicio);
     // effort 'low' para que la generación termine con holgura dentro del límite de 60 s de la función
-    const { texto, modelo } = await generar({ modo: 'resumen', ctx, effort: 'low' });
+    const r = await generar({ modo: 'resumen', ctx, effort: 'low' });
+    const modelo = r.modelo;
+    // las alertas automáticas van primero en el correo, aunque nadie haya preguntado
+    const alertas = ctx.alertas || [];
+    const icono = { alta: '🔴', media: '🟠', baja: '🟡' };
+    const texto = (alertas.length
+      ? `## Alertas automáticas de la semana ${ctx.semana}\n${alertas.map(a => `- ${icono[a.nivel] || '•'} ${a.titulo}. ${a.detalle}`).join('\n')}\n\n`
+      : `## Alertas automáticas de la semana ${ctx.semana}\n- ✅ Sin alertas: todos los canales cumplen las metas y el presupuesto va al ritmo esperado.\n\n`) + r.texto;
 
     const { transporte, from } = crearTransporte();
     const asunto = `Briefing IA · semana ${ctx.semana} · Marketing Yango`;
