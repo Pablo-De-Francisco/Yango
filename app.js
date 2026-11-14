@@ -216,21 +216,48 @@ function alertasSemana(w) {
   return out.sort((a, c) => orden[a.nivel] - orden[c.nivel]);
 }
 const ICONO_ALERTA = { alta: '🔴', media: '🟠', baja: '🟡' };
+// alertas ya revisadas («Limpiar notificaciones»): por usuario, escenario y semana; una alerta nueva vuelve a aparecer
+const vistasClave = () => 'yango_alertas_vistas_' + (state.user?.id || 'anon');
+const vistasId = () => `${state.isUser ? 'archivo' : state.scenario}|${state.week}`;
+function alertasVistas() {
+  try { return new Set((JSON.parse(localStorage.getItem(vistasClave()) || '{}'))[vistasId()] || []); } catch { return new Set(); }
+}
+function guardarVistas(titulos) {
+  try {
+    const todo = JSON.parse(localStorage.getItem(vistasClave()) || '{}');
+    if (titulos.length) todo[vistasId()] = titulos; else delete todo[vistasId()];
+    // solo se guardan las 30 semanas más recientes
+    const claves = Object.keys(todo); if (claves.length > 30) for (const k of claves.slice(0, claves.length - 30)) delete todo[k];
+    localStorage.setItem(vistasClave(), JSON.stringify(todo));
+  } catch { /* sin almacenamiento: solo esta visita */ }
+}
 function renderAlertasIA() {
-  const lista = state.week != null ? alertasSemana(state.week) : [];
+  const todas = state.week != null ? alertasSemana(state.week) : [];
+  const vistas = alertasVistas();
+  const lista = todas.filter(a => !vistas.has(a.titulo));
   state.alertas = lista;
   $('#alertBtn').hidden = false;
   $('#alertCount').textContent = lista.length || '✓';
   $('#alertCount').className = 'count' + (lista.length ? '' : ' ok');
-  $('#alertBtn').title = lista.length ? `${lista.length} alerta(s) automática(s) en la semana ${state.week}` : `Sin alertas en la semana ${state.week}`;
+  $('#alertBtn').title = lista.length ? `${lista.length} alerta(s) automática(s) en la semana ${state.week}` : todas.length ? `Alertas de la semana ${state.week} revisadas` : `Sin alertas en la semana ${state.week}`;
   const conIA = aiAvailable();
   $('#alertPanel').innerHTML = `<div class="alertas-cab"><b>🔔 Alertas automáticas · semana ${esc(state.week)}</b>
       <span class="note">La herramienta revisa los datos de cada semana y avisa sin que nadie pregunte. También llegan en el correo del lunes.</span>
-      ${lista.length && conIA ? '<button type="button" class="voz-btn" id="alertVoz">🔊 Escuchar</button>' : ''}</div>` +
+      ${lista.length && conIA ? '<button type="button" class="voz-btn" id="alertVoz">🔊 Escuchar</button>' : ''}
+      ${lista.length ? '<button type="button" class="voz-btn" id="alertLimpiar" title="Marcar estas alertas como revisadas">🧹 Limpiar notificaciones</button>' : ''}</div>` +
     (lista.length
       ? `<ul class="alertas-lista">${lista.map((a, i) => `<li class="alerta-ia ${a.nivel}"><span class="alerta-ico">${ICONO_ALERTA[a.nivel]}</span><div><b>${esc(a.titulo)}</b><br><span>${esc(a.detalle)}</span></div>
           <button type="button" class="link-btn" data-alerta="${i}">Preguntar al asistente</button></li>`).join('')}</ul>`
-      : '<p class="alertas-ok">✅ Sin alertas: todos los canales cumplen las metas y el presupuesto va al ritmo esperado.</p>');
+      : todas.length
+        ? `<p class="alertas-ok">✓ Revisaste ${todas.length === 1 ? 'la alerta' : `las ${todas.length} alertas`} de esta semana. <button type="button" class="link-btn" id="alertMostrar">Mostrar de nuevo</button></p>`
+        : '<p class="alertas-ok">✅ Sin alertas: todos los canales cumplen las metas y el presupuesto va al ritmo esperado.</p>');
+  $('#alertLimpiar')?.addEventListener('click', () => {
+    guardarVistas(todas.map(a => a.titulo));
+    $('#alertToast').hidden = true;
+    pararVoz();
+    renderAlertasIA();
+  });
+  $('#alertMostrar')?.addEventListener('click', () => { guardarVistas([]); renderAlertasIA(); });
   const v = $('#alertVoz');
   if (v) { marcarVoz(v, 'listo'); v.addEventListener('click', () => hablar(`Alertas de la semana ${state.week}. ` + lista.map(a => `${a.titulo}. ${a.detalle}`).join(' '), 'asistente', v)); }
 }
